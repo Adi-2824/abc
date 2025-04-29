@@ -1,0 +1,148 @@
+-- Create the Database
+CREATE DATABASE AirTicketReservationDB;
+GO
+
+-- Use the Database
+USE AirTicketReservationDB;
+GO
+
+-- 1. Users Table
+CREATE TABLE Users (
+    UserId INT IDENTITY(1,1) PRIMARY KEY,
+    FullName NVARCHAR(100) NOT NULL,
+    Email NVARCHAR(100) NOT NULL UNIQUE,
+    PasswordHash NVARCHAR(255) NOT NULL,
+    PhoneNumber NVARCHAR(20),
+    Role NVARCHAR(50) DEFAULT 'User'
+);
+GO
+
+-- 2. Airlines Table
+CREATE TABLE Airlines (
+    AirlineId INT IDENTITY(1,1) PRIMARY KEY,
+    Name NVARCHAR(100) NOT NULL,
+    Code NVARCHAR(10) NOT NULL UNIQUE,
+    Country NVARCHAR(100)
+);
+GO
+
+-- 3. Airports Table
+CREATE TABLE Airports (
+    AirportId INT IDENTITY(1,1) PRIMARY KEY,
+    Name NVARCHAR(150) NOT NULL,
+    City NVARCHAR(100) NOT NULL,
+    Country NVARCHAR(100) NOT NULL,
+    Code NVARCHAR(10) NOT NULL UNIQUE
+);
+GO
+
+-- 4. Flights Table
+CREATE TABLE Flights (
+    FlightId INT IDENTITY(1,1) PRIMARY KEY,
+    FlightNumber NVARCHAR(20) NOT NULL UNIQUE,
+    AirlineId INT NOT NULL,
+    DepartureAirportId INT NOT NULL,
+    ArrivalAirportId INT NOT NULL,
+    DepartureDate DATE NOT NULL,
+    DepartureTime TIME NOT NULL,
+    ArrivalTime TIME NOT NULL,
+    Duration TIME,
+    Status NVARCHAR(50) DEFAULT 'Scheduled',
+    FOREIGN KEY (AirlineId) REFERENCES Airlines(AirlineId),
+    FOREIGN KEY (DepartureAirportId) REFERENCES Airports(AirportId),
+    FOREIGN KEY (ArrivalAirportId) REFERENCES Airports(AirportId)
+);
+GO
+
+-- 5. FlightSeats Table
+CREATE TABLE FlightSeats (
+    SeatId INT IDENTITY(1,1) PRIMARY KEY,
+    FlightId INT NOT NULL,
+    SeatNumber NVARCHAR(10) NOT NULL,
+    SeatClass NVARCHAR(50) NOT NULL, -- Economy, Business
+    IsAvailable BIT DEFAULT 1,
+    Price DECIMAL(10,2) NOT NULL,
+    FOREIGN KEY (FlightId) REFERENCES Flights(FlightId)
+);
+GO
+
+-- 6. Reservations Table
+CREATE TABLE Reservations (
+    ReservationId INT IDENTITY(1,1) PRIMARY KEY,
+    UserId INT NOT NULL,
+    ReservationDate DATETIME DEFAULT GETDATE(),
+    TotalAmount DECIMAL(10,2) NOT NULL,
+    Status NVARCHAR(50) DEFAULT 'Booked',
+    FOREIGN KEY (UserId) REFERENCES Users(UserId)
+);
+GO
+
+-- 7. ReservationDetails Table
+CREATE TABLE ReservationDetails (
+    ReservationDetailId INT IDENTITY(1,1) PRIMARY KEY,
+    ReservationId INT NOT NULL,
+    FlightId INT NOT NULL,
+    SeatId INT NOT NULL,
+    FOREIGN KEY (ReservationId) REFERENCES Reservations(ReservationId),
+    FOREIGN KEY (FlightId) REFERENCES Flights(FlightId),
+    FOREIGN KEY (SeatId) REFERENCES FlightSeats(SeatId)
+);
+GO
+
+-- 8. Cancellations Table
+CREATE TABLE Cancellations (
+    CancellationId INT IDENTITY(1,1) PRIMARY KEY,
+    ReservationId INT NOT NULL,
+    CancellationDate DATETIME DEFAULT GETDATE(),
+    CancellationReason NVARCHAR(255),
+    FOREIGN KEY (ReservationId) REFERENCES Reservations(ReservationId)
+);
+GO
+
+
+
+-------------------------------------------------------inserting values---------------------------------------------
+
+
+-- Airlines
+INSERT INTO Airlines (Name, Code, Country) VALUES
+('IndiGo Airlines', '6E', 'India'),
+('Air India', 'AI', 'India');
+
+-- Airports
+INSERT INTO Airports (Name, City, Country, Code) VALUES
+('Indira Gandhi International Airport', 'Delhi', 'India', 'DEL'),
+('Chhatrapati Shivaji Maharaj International Airport', 'Mumbai', 'India', 'BOM'),
+('Kempegowda International Airport', 'Bangalore', 'India', 'BLR');
+
+-- Flights
+INSERT INTO Flights (FlightNumber, AirlineId, DepartureAirportId, ArrivalAirportId, DepartureDate, DepartureTime, ArrivalTime, Duration, Status) VALUES
+('6E101', 1, 1, 2, '2025-05-10', '10:00', '12:00', '02:00', 'Scheduled'),
+('6E102', 1, 2, 1, '2025-05-15', '15:00', '17:00', '02:00', 'Scheduled'),
+('AI201', 2, 1, 3, '2025-05-12', '09:00', '11:30', '02:30', 'Scheduled');
+
+-- FlightSeats (2 seats per flight)
+INSERT INTO FlightSeats (FlightId, SeatNumber, SeatClass, IsAvailable, Price) VALUES
+(1, '12A', 'Economy', 1, 3500.00),
+(1, '12B', 'Economy', 1, 3500.00),
+(2, '14C', 'Economy', 1, 3600.00),
+(2, '14D', 'Economy', 1, 3600.00),
+(3, '15A', 'Business', 1, 7000.00),
+(3, '15B', 'Business', 1, 7000.00);
+
+-- User
+INSERT INTO Users (FullName, Email, PasswordHash, PhoneNumber, Role) VALUES
+('John Doe', 'john@example.com', 'hashedpassword123', '9876543210', 'User');
+
+-- Reservation (round trip: Delhi -> Mumbai and back)
+INSERT INTO Reservations (UserId, ReservationDate, TotalAmount, Status) VALUES
+(1, GETDATE(), 7100.00, 'Booked');
+
+-- ReservationDetails
+INSERT INTO ReservationDetails (ReservationId, FlightId, SeatId) VALUES
+(1, 1, 1), -- Delhi to Mumbai, seat 12A
+(1, 2, 3); -- Mumbai to Delhi, seat 14C
+
+-- Cancellation (demo)
+INSERT INTO Cancellations (ReservationId, CancellationDate, CancellationReason) VALUES
+(1, GETDATE(), 'Personal reasons');
