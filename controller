@@ -69,6 +69,38 @@ public class AutoMapperProfile : Profile
     }
 }
 
+// Data/AppDbContext.cs
+using Microsoft.EntityFrameworkCore;
+
+public class AppDbContext : DbContext
+{
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+    public DbSet<Flight> Flights { get; set; }
+    public DbSet<Airline> Airlines { get; set; }
+    public DbSet<Airport> Airports { get; set; }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Flight>()
+            .HasOne(f => f.Airline)
+            .WithMany(a => a.Flights)
+            .HasForeignKey(f => f.AirlineId);
+
+        modelBuilder.Entity<Flight>()
+            .HasOne(f => f.DepartureAirport)
+            .WithMany(a => a.DepartingFlights)
+            .HasForeignKey(f => f.DepartureAirportId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Flight>()
+            .HasOne(f => f.ArrivalAirport)
+            .WithMany(a => a.ArrivingFlights)
+            .HasForeignKey(f => f.ArrivalAirportId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 // Interfaces/IFlightRepository.cs
 public interface IFlightRepository
 {
