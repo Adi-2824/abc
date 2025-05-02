@@ -1,0 +1,135 @@
+// Models/Flight.cs
+public class Flight
+{
+    public int FlightId { get; set; }
+    public string FlightNumber { get; set; }
+    public int AirlineId { get; set; }
+    public int DepartureAirportId { get; set; }
+    public int ArrivalAirportId { get; set; }
+    public DateTime DepartureDate { get; set; }
+    public TimeSpan DepartureTime { get; set; }
+    public TimeSpan ArrivalTime { get; set; }
+    public TimeSpan? Duration { get; set; }
+    public string Status { get; set; } = "Scheduled";
+
+    public Airline Airline { get; set; }
+    public Airport DepartureAirport { get; set; }
+    public Airport ArrivalAirport { get; set; }
+}
+
+// Interfaces/IFlightRepository.cs
+public interface IFlightRepository
+{
+    Task<IEnumerable<Flight>> GetAllAsync();
+    Task<Flight?> GetByIdAsync(int id);
+    Task<IEnumerable<Flight>> SearchAsync(string fromCity, string toCity, DateTime date);
+    Task AddAsync(Flight flight);
+    Task UpdateAsync(Flight flight);
+    Task DeleteAsync(int id);
+}
+
+// Repositories/FlightRepository.cs
+public class FlightRepository : IFlightRepository
+{
+    private readonly AppDbContext _context;
+
+    public FlightRepository(AppDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<IEnumerable<Flight>> GetAllAsync()
+    {
+        return await _context.Flights.Include(f => f.Airline)
+                                      .Include(f => f.DepartureAirport)
+                                      .Include(f => f.ArrivalAirport)
+                                      .ToListAsync();
+    }
+
+    public async Task<Flight?> GetByIdAsync(int id)
+    {
+        return await _context.Flights.Include(f => f.Airline)
+                                     .Include(f => f.DepartureAirport)
+                                     .Include(f => f.ArrivalAirport)
+                                     .FirstOrDefaultAsync(f => f.FlightId == id);
+    }
+
+    public async Task<IEnumerable<Flight>> SearchAsync(string fromCity, string toCity, DateTime date)
+    {
+        return await _context.Flights
+            .Include(f => f.DepartureAirport)
+            .Include(f => f.ArrivalAirport)
+            .Where(f => f.DepartureAirport.City == fromCity &&
+                        f.ArrivalAirport.City == toCity &&
+                        f.DepartureDate == date)
+            .ToListAsync();
+    }
+
+    public async Task AddAsync(Flight flight)
+    {
+        await _context.Flights.AddAsync(flight);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task UpdateAsync(Flight flight)
+    {
+        _context.Flights.Update(flight);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task DeleteAsync(int id)
+    {
+        var flight = await _context.Flights.FindAsync(id);
+        if (flight != null)
+        {
+            _context.Flights.Remove(flight);
+            await _context.SaveChangesAsync();
+        }
+    }
+}
+
+// Controllers/FlightsController.cs
+[ApiController]
+[Route("api/[controller]")]
+public class FlightsController : ControllerBase
+{
+    private readonly IFlightRepository _repository;
+
+    public FlightsController(IFlightRepository repository)
+    {
+        _repository = repository;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll() => Ok(await _repository.GetAllAsync());
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> Get(int id) =>
+        (await _repository.GetByIdAsync(id)) is Flight f ? Ok(f) : NotFound();
+
+    [HttpGet("search")]
+    public async Task<IActionResult> Search([FromQuery] string from, [FromQuery] string to, [FromQuery] DateTime date)
+        => Ok(await _repository.SearchAsync(from, to, date));
+
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] Flight flight)
+    {
+        await _repository.AddAsync(flight);
+        return CreatedAtAction(nameof(Get), new { id = flight.FlightId }, flight);
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] Flight updated)
+    {
+        if (id != updated.FlightId) return BadRequest();
+        await _repository.UpdateAsync(updated);
+        return NoContent();
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        await _repository.DeleteAsync(id);
+        return NoContent();
+    }
+}
