@@ -17,6 +17,58 @@ public class Flight
     public Airport ArrivalAirport { get; set; }
 }
 
+// Models/Airline.cs
+public class Airline
+{
+    public int AirlineId { get; set; }
+    public string Name { get; set; }
+    public string Code { get; set; }
+    public string? Country { get; set; }
+
+    public ICollection<Flight> Flights { get; set; }
+}
+
+// Models/Airport.cs
+public class Airport
+{
+    public int AirportId { get; set; }
+    public string Name { get; set; }
+    public string City { get; set; }
+    public string Country { get; set; }
+    public string Code { get; set; }
+
+    public ICollection<Flight> DepartingFlights { get; set; }
+    public ICollection<Flight> ArrivingFlights { get; set; }
+}
+
+// ViewModels/FlightViewModel.cs
+public class FlightViewModel
+{
+    public string FlightNumber { get; set; }
+    public string AirlineName { get; set; }
+    public string FromCity { get; set; }
+    public string ToCity { get; set; }
+    public DateTime DepartureDate { get; set; }
+    public TimeSpan DepartureTime { get; set; }
+    public TimeSpan ArrivalTime { get; set; }
+    public string Status { get; set; }
+    public decimal? Price { get; set; }
+}
+
+// Mapping/AutoMapperProfile.cs
+using AutoMapper;
+
+public class AutoMapperProfile : Profile
+{
+    public AutoMapperProfile()
+    {
+        CreateMap<Flight, FlightViewModel>()
+            .ForMember(dest => dest.AirlineName, opt => opt.MapFrom(src => src.Airline.Name))
+            .ForMember(dest => dest.FromCity, opt => opt.MapFrom(src => src.DepartureAirport.City))
+            .ForMember(dest => dest.ToCity, opt => opt.MapFrom(src => src.ArrivalAirport.City));
+    }
+}
+
 // Interfaces/IFlightRepository.cs
 public interface IFlightRepository
 {
@@ -59,6 +111,7 @@ public class FlightRepository : IFlightRepository
         return await _context.Flights
             .Include(f => f.DepartureAirport)
             .Include(f => f.ArrivalAirport)
+            .Include(f => f.Airline)
             .Where(f => f.DepartureAirport.City == fromCity &&
                         f.ArrivalAirport.City == toCity &&
                         f.DepartureDate == date)
@@ -94,22 +147,37 @@ public class FlightRepository : IFlightRepository
 public class FlightsController : ControllerBase
 {
     private readonly IFlightRepository _repository;
+    private readonly IMapper _mapper;
 
-    public FlightsController(IFlightRepository repository)
+    public FlightsController(IFlightRepository repository, IMapper mapper)
     {
         _repository = repository;
+        _mapper = mapper;
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll() => Ok(await _repository.GetAllAsync());
+    public async Task<IActionResult> GetAll()
+    {
+        var flights = await _repository.GetAllAsync();
+        var result = _mapper.Map<IEnumerable<FlightViewModel>>(flights);
+        return Ok(result);
+    }
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> Get(int id) =>
-        (await _repository.GetByIdAsync(id)) is Flight f ? Ok(f) : NotFound();
+    public async Task<IActionResult> Get(int id)
+    {
+        var flight = await _repository.GetByIdAsync(id);
+        if (flight == null) return NotFound();
+        return Ok(_mapper.Map<FlightViewModel>(flight));
+    }
 
     [HttpGet("search")]
     public async Task<IActionResult> Search([FromQuery] string from, [FromQuery] string to, [FromQuery] DateTime date)
-        => Ok(await _repository.SearchAsync(from, to, date));
+    {
+        var flights = await _repository.SearchAsync(from, to, date);
+        var result = _mapper.Map<IEnumerable<FlightViewModel>>(flights);
+        return Ok(result);
+    }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] Flight flight)
