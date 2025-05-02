@@ -101,6 +101,39 @@ public class AppDbContext : DbContext
     }
 }
 
+// Data/DbSeeder.cs
+public static class DbSeeder
+{
+    public static void Seed(AppDbContext context)
+    {
+        if (!context.Airlines.Any())
+        {
+            context.Airlines.AddRange(
+                new Airline { Name = "IndiGo Airlines", Code = "6E", Country = "India" },
+                new Airline { Name = "Air India", Code = "AI", Country = "India" },
+                new Airline { Name = "SpiceJet", Code = "SG", Country = "India" },
+                new Airline { Name = "Emirates", Code = "EK", Country = "UAE" },
+                new Airline { Name = "Qatar Airways", Code = "QR", Country = "Qatar" }
+            );
+        }
+
+        if (!context.Airports.Any())
+        {
+            context.Airports.AddRange(
+                new Airport { Name = "Indira Gandhi International Airport", City = "Delhi", Country = "India", Code = "DEL" },
+                new Airport { Name = "Chhatrapati Shivaji Maharaj International Airport", City = "Mumbai", Country = "India", Code = "BOM" },
+                new Airport { Name = "Kempegowda International Airport", City = "Bangalore", Country = "India", Code = "BLR" },
+                new Airport { Name = "Rajiv Gandhi International Airport", City = "Hyderabad", Country = "India", Code = "HYD" },
+                new Airport { Name = "Netaji Subhash Chandra Bose International Airport", City = "Kolkata", Country = "India", Code = "CCU" },
+                new Airport { Name = "Dubai International Airport", City = "Dubai", Country = "UAE", Code = "DXB" },
+                new Airport { Name = "Hamad International Airport", City = "Doha", Country = "Qatar", Code = "DOH" }
+            );
+        }
+
+        context.SaveChanges();
+    }
+}
+
 // Interfaces/IFlightRepository.cs
 public interface IFlightRepository
 {
