@@ -1,0 +1,224 @@
+// Models/Flight.cs
+public class Flight
+{
+    public int FlightId { get; set; }
+    public string FlightNumber { get; set; }
+    public int AirlineId { get; set; }
+    public int DepartureAirportId { get; set; }
+    public int ArrivalAirportId { get; set; }
+    public DateTime DepartureDateTime { get; set; }
+    public DateTime ArrivalDateTime { get; set; }
+    public string Status { get; set; } = "Scheduled";
+
+    public Airline Airline { get; set; }
+    public Airport DepartureAirport { get; set; }
+    public Airport ArrivalAirport { get; set; }
+}
+
+// Models/Airline.cs
+public class Airline
+{
+    public int AirlineId { get; set; }
+    public string Name { get; set; }
+    public string Code { get; set; }
+    public string? Country { get; set; }
+
+    public ICollection<Flight> Flights { get; set; }
+}
+
+// Models/Airport.cs
+public class Airport
+{
+    public int AirportId { get; set; }
+    public string Name { get; set; }
+    public string City { get; set; }
+    public string Country { get; set; }
+    public string Code { get; set; }
+
+    public ICollection<Flight> DepartingFlights { get; set; }
+    public ICollection<Flight> ArrivingFlights { get; set; }
+}
+
+// DTOs/CreateFlightDTO.cs
+public class CreateFlightDTO
+{
+    public string FlightNumber { get; set; }
+    public int AirlineId { get; set; }
+    public int DepartureAirportId { get; set; }
+    public int ArrivalAirportId { get; set; }
+    public DateTime DepartureDateTime { get; set; }
+    public DateTime ArrivalDateTime { get; set; }
+    public string Status { get; set; } = "Scheduled";
+}
+
+// DTOs/UpdateFlightDTO.cs
+public class UpdateFlightDTO : CreateFlightDTO
+{
+    public int FlightId { get; set; }
+}
+
+// ViewModels/FlightViewModel.cs
+public class FlightViewModel
+{
+    public int FlightId { get; set; }
+    public string FlightNumber { get; set; }
+    public string AirlineName { get; set; }
+    public string FromCity { get; set; }
+    public string ToCity { get; set; }
+    public DateTime DepartureDateTime { get; set; }
+    public DateTime ArrivalDateTime { get; set; }
+    public string Status { get; set; }
+}
+
+// Mapping/AutoMapperProfile.cs
+using AutoMapper;
+
+public class AutoMapperProfile : Profile
+{
+    public AutoMapperProfile()
+    {
+        CreateMap<Flight, FlightViewModel>()
+            .ForMember(dest => dest.AirlineName, opt => opt.MapFrom(src => src.Airline.Name))
+            .ForMember(dest => dest.FromCity, opt => opt.MapFrom(src => src.DepartureAirport.City))
+            .ForMember(dest => dest.ToCity, opt => opt.MapFrom(src => src.ArrivalAirport.City));
+
+        CreateMap<CreateFlightDTO, Flight>();
+        CreateMap<UpdateFlightDTO, Flight>();
+    }
+}
+
+// Interfaces/IFlightRepository.cs
+public interface IFlightRepository
+{
+    Task<IEnumerable<Flight>> GetAllAsync();
+    Task<Flight?> GetByIdAsync(int id);
+    Task<IEnumerable<Flight>> SearchAsync(string fromCity, string toCity, DateTime date);
+    Task AddAsync(Flight flight);
+    Task UpdateAsync(Flight flight);
+    Task<bool> DeleteAsync(int id);
+}
+
+// Repositories/FlightRepository.cs
+public class FlightRepository : IFlightRepository
+{
+    private readonly AppDbContext _context;
+
+    public FlightRepository(AppDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<IEnumerable<Flight>> GetAllAsync()
+    {
+        return await _context.Flights.Include(f => f.Airline)
+                                     .Include(f => f.DepartureAirport)
+                                     .Include(f => f.ArrivalAirport)
+                                     .ToListAsync();
+    }
+
+    public async Task<Flight?> GetByIdAsync(int id)
+    {
+        return await _context.Flights.Include(f => f.Airline)
+                                     .Include(f => f.DepartureAirport)
+                                     .Include(f => f.ArrivalAirport)
+                                     .FirstOrDefaultAsync(f => f.FlightId == id);
+    }
+
+    public async Task<IEnumerable<Flight>> SearchAsync(string fromCity, string toCity, DateTime date)
+    {
+        return await _context.Flights
+            .Include(f => f.DepartureAirport)
+            .Include(f => f.ArrivalAirport)
+            .Include(f => f.Airline)
+            .Where(f => f.DepartureAirport.City == fromCity &&
+                        f.ArrivalAirport.City == toCity &&
+                        f.DepartureDateTime.Date == date.Date)
+            .ToListAsync();
+    }
+
+    public async Task AddAsync(Flight flight)
+    {
+        await _context.Flights.AddAsync(flight);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task UpdateAsync(Flight flight)
+    {
+        _context.Flights.Update(flight);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<bool> DeleteAsync(int id)
+    {
+        var flight = await _context.Flights.FindAsync(id);
+        if (flight == null) return false;
+
+        _context.Flights.Remove(flight);
+        await _context.SaveChangesAsync();
+        return true;
+    }
+}
+
+// Controllers/FlightsController.cs
+[ApiController]
+[Route("api/[controller]")]
+public class FlightsController : ControllerBase
+{
+    private readonly IFlightRepository _repository;
+    private readonly IMapper _mapper;
+
+    public FlightsController(IFlightRepository repository, IMapper mapper)
+    {
+        _repository = repository;
+        _mapper = mapper;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll()
+    {
+        var flights = await _repository.GetAllAsync();
+        var result = _mapper.Map<IEnumerable<FlightViewModel>>(flights);
+        return Ok(result);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> Get(int id)
+    {
+        var flight = await _repository.GetByIdAsync(id);
+        if (flight == null) return NotFound();
+        return Ok(_mapper.Map<FlightViewModel>(flight));
+    }
+
+    [HttpGet("search")]
+    public async Task<IActionResult> Search([FromQuery] string from, [FromQuery] string to, [FromQuery] DateTime date)
+    {
+        var flights = await _repository.SearchAsync(from, to, date);
+        var result = _mapper.Map<IEnumerable<FlightViewModel>>(flights);
+        return Ok(result);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateFlightDTO dto)
+    {
+        var flight = _mapper.Map<Flight>(dto);
+        await _repository.AddAsync(flight);
+        return CreatedAtAction(nameof(Get), new { id = flight.FlightId }, _mapper.Map<FlightViewModel>(flight));
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateFlightDTO dto)
+    {
+        if (id != dto.FlightId) return BadRequest("Flight ID mismatch");
+        var flight = _mapper.Map<Flight>(dto);
+        await _repository.UpdateAsync(flight);
+        return Ok("Flight updated successfully");
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var deleted = await _repository.DeleteAsync(id);
+        if (!deleted) return NotFound("Flight not found");
+        return Ok("Flight deleted successfully");
+    }
+}
