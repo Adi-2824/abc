@@ -266,3 +266,90 @@ public class FlightsController : ControllerBase
         return NoContent();
     }
 }
+
+
+
+---------------------------------------------------------------api---------------
+
+{
+  "flightId": 0,
+  "flightNumber": "string",
+  "airlineId": 0,
+  "departureAirportId": 0,
+  "arrivalAirportId": 0,
+  "departureDate": "2025-05-05T04:41:55.354Z",
+  "departureTime": "string",
+  "arrivalTime": "string",
+  "duration": "string",
+  "status": "string",
+  "airline": {
+    "airlineId": 0,
+    "name": "string",
+    "code": "string",
+    "country": "string",
+    "flights": [
+      "string"
+    ]
+  },
+  "departureAirport": {
+    "airportId": 0,
+    "name": "string",
+    "city": "string",
+    "country": "string",
+    "code": "string",
+    "departingFlights": [
+      "string"
+    ],
+    "arrivingFlights": [
+      "string"
+    ]
+  },
+  "arrivalAirport": {
+    "airportId": 0,
+    "name": "string",
+    "city": "string",
+    "country": "string",
+    "code": "string",
+    "departingFlights": [
+      "string"
+    ],
+    "arrivingFlights": [
+      "string"
+    ]
+  }
+}
+
+
+----------------error  
+400
+Undocumented
+Error: response status is 400
+
+Response body
+Download
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "errors": {
+    "flight": [
+      "The flight field is required."
+    ],
+    "$.departureTime": [
+      "The JSON value could not be converted to System.TimeSpan. Path: $.departureTime | LineNumber: 7 | BytePositionInLine: 27."
+    ]
+  },
+  "traceId": "00-104b03a48c2035f7722cd1831b1b7796-c375fa65ee55f208-00"
+}
+
+for 500 error for internal server 
+
+
+----------------delete api 
+
+204
+Undocumented
+Response headers
+ access-control-allow-origin: * 
+ date: Mon,05 May 2025 04:47:44 GMT 
+ server: Kestrel 
