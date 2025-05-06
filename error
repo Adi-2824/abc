@@ -1,0 +1,128 @@
+for Get all flight 
+
+https://localhost:7261/api/Flights
+Server response
+Code	Details
+200	
+Response body
+Download
+[
+  {
+    "flightNumber": "AI203",
+    "airlineName": "IndiGo Airlines",
+    "fromCity": "Delhi",
+    "toCity": "Mumbai",
+    "departureDate": "2025-05-06T06:34:36.616",
+    "departureTime": "06:34:00",
+    "arrivalTime": "08:45:00",
+    "status": "On Time",
+    "price": null
+  }
+]
+
+why the price value is comming null 
+
+-----------------------------------------------------
+
+in post api 
+
+{
+  "flightNumber": "IE208",
+  "airlineId": 3,
+  "departureAirportId": 3,
+  "arrivalAirportId": 1,
+  "departureDate": "2025-05-06T07:15:21.324Z",
+  "departureTime": "03:34:00",
+  "arrivalTime": "04:34:00",
+  "duration": "01:00:00",
+  "status": "Scheduled"
+}
+we are entering these values but getting the below mentioned 
+
+Request URL
+https://localhost:7261/api/Flights
+Server response
+Code	Details
+201
+Undocumented
+Response body
+Download
+{
+  "flightNumber": "IE208",
+  "airlineName": null,
+  "fromCity": null,
+  "toCity": null,
+  "departureDate": "2025-05-06T07:15:21.324Z",
+  "departureTime": "03:34:00",
+  "arrivalTime": "04:34:00",
+  "status": "Scheduled",
+  "price": null
+}
+
+why we are getting this 
+
+------------------------------------------
+for search by id 
+
+the api is working fine 
+
+----------------------
+
+for put api gettng the following error 
+
+Name	Description
+id *
+integer($int32)
+(path)
+8
+Request body
+
+application/json
+{
+  "flightNumber": "string",
+  "airlineId": 0,
+  "departureAirportId": 0,
+  "arrivalAirportId": 0,
+  "departureDate": "2025-05-06T07:20:44.157Z",
+  "departureTime": "09:00:00",
+  "arrivalTime": "10:00:00",
+  "duration": "01:00:00",
+  "status": "string",
+  "flightId": 0
+}
+Execute
+Clear
+Responses
+Curl
+
+curl -X 'PUT' \
+  'https://localhost:7261/api/Flights/8' \
+  -H 'accept: */*' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "flightNumber": "string",
+  "airlineId": 0,
+  "departureAirportId": 0,
+  "arrivalAirportId": 0,
+  "departureDate": "2025-05-06T07:20:44.157Z",
+  "departureTime": "09:00:00",
+  "arrivalTime": "10:00:00",
+  "duration": "01:00:00",
+  "status": "string",
+  "flightId": 0
+}'
+Request URL
+https://localhost:7261/api/Flights/8
+Server response
+Code	Details
+400
+Undocumented
+Error: response status is 400
+
+Response body
+Download
+Flight ID mismatch
+
+but the same id is working for search flight by id 
+
+
