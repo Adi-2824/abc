@@ -1,0 +1,123 @@
+// AirTicketReservationSystem.Infrastructure/Repositories/FlightRepository.cs
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using AirTicketReservationSystem.Core.Interfaces;
+using AirTicketReservationSystem.Core.Models;
+using AirTicketReservationSystem.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace AirTicketReservationSystem.Infrastructure.Repositories
+{
+    public class FlightRepository : IFlightRepository
+    {
+        private readonly ApplicationDbContext _context;
+        private readonly ILogger<FlightRepository> _logger;
+
+        public FlightRepository(ApplicationDbContext context, ILogger<FlightRepository> logger)
+        {
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+
+        public async Task<Flight> GetByIdAsync(int flightId)
+        {
+            try
+            {
+                return await _context.Flights.FindAsync(flightId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error retrieving flight with ID {flightId}");
+                throw;
+            }
+        }
+
+        public async Task<IEnumerable<Flight>> SearchFlightsAsync(string departureCity, string arrivalCity, DateTime departureDate)
+        {
+            try
+            {
+                // Get the start and end of the departure date to find all flights on that day
+                var startDate = departureDate.Date;
+                var endDate = startDate.AddDays(1).AddTicks(-1);
+
+                return await _context.Flights
+                    .Where(f => 
+                        f.DepartureCity.ToLower() == departureCity.ToLower() &&
+                        f.ArrivalCity.ToLower() == arrivalCity.ToLower() &&
+                        f.DepartureTime >= startDate &&
+                        f.DepartureTime <= endDate &&
+                        f.IsActive)
+                    .OrderBy(f => f.DepartureTime)
+                    .ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error searching flights from {departureCity} to {arrivalCity} on {departureDate}");
+                throw;
+            }
+        }
+
+        public async Task<bool> UpdateAvailableSeatsAsync(int flightId, TravelClass travelClass, int seatsToReduce)
+        {
+            try
+            {
+                var flight = await _context.Flights.FindAsync(flightId);
+                if (flight == null)
+                {
+                    return false;
+                }
+
+                switch (travelClass)
+                {
+                    case TravelClass.Economy:
+                        if (flight.AvailableSeatsEconomy < seatsToReduce)
+                        {
+                            return false;
+                        }
+                        flight.AvailableSeatsEconomy -= seatsToReduce;
+                        break;
+                    case TravelClass.Business:
+                        if (flight.AvailableSeatsBusiness < seatsToReduce)
+                        {
+                            return false;
+                        }
+                        flight.AvailableSeatsBusiness -= seatsToReduce;
+                        break;
+                    case TravelClass.FirstClass:
+                        if (flight.AvailableSeatsFirstClass < seatsToReduce)
+                        {
+                            return false;
+                        }
+                        flight.AvailableSeatsFirstClass -= seatsToReduce;
+                        break;
+                    default:
+                        return false;
+                }
+
+                return await SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error updating available seats for flight {flightId}");
+                throw;
+            }
+        }
+
+        public async Task<bool> SaveChangesAsync()
+        {
+            try
+            {
+                return await _context.SaveChangesAsync() > 0;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving changes to database");
+                throw;
+            }
+        }
+    }
+}
