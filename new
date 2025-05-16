@@ -883,19 +883,13 @@ namespace AirTicket.Controllers
 
             try
             {
-                // Create the reservation
-                var reservation = new Reservation
-                {
-                    FlightId = flight.Id,
-                    UserId = userId,
-                    ReservationDate =
-
-
---------------------------------------------------------------------------
+                
 
 
 
-// Continuing from ReservationsController.cs - CreateReservation method
+
+
+
                 // Create the reservation
                 var reservation = new Reservation
                 {
