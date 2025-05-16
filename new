@@ -1,0 +1,1683 @@
+// AIR TICKET RESERVATION SYSTEM - BACKEND IMPLEMENTATION
+
+// MODELS
+// ======
+
+// Models/Flight.cs
+namespace AirTicket.Models
+{
+    public class Flight
+    {
+        public int Id { get; set; }
+        public string FlightNumber { get; set; }
+        public string AirlineName { get; set; }
+        public string DepartureCity { get; set; }
+        public string ArrivalCity { get; set; }
+        public DateTime DepartureTime { get; set; }
+        public DateTime ArrivalTime { get; set; }
+        public int TotalBusinessSeats { get; set; }
+        public int TotalEconomySeats { get; set; }
+        public int AvailableBusinessSeats { get; set; }
+        public int AvailableEconomySeats { get; set; }
+        public decimal BusinessClassPrice { get; set; }
+        public decimal EconomyClassPrice { get; set; }
+        public bool IsActive { get; set; } = true;
+
+        public virtual ICollection<Reservation> Reservations { get; set; }
+    }
+}
+
+// Models/User.cs
+namespace AirTicket.Models
+{
+    public class User
+    {
+        public int Id { get; set; }
+        public string Username { get; set; }
+        public string Email { get; set; }
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+        public string PasswordHash { get; set; }
+        public string PhoneNumber { get; set; }
+        public string Role { get; set; } // "Admin" or "User"
+        
+        public virtual ICollection<Reservation> Reservations { get; set; }
+    }
+}
+
+// Models/Reservation.cs
+namespace AirTicket.Models
+{
+    public enum ReservationStatus
+    {
+        Pending,
+        Confirmed,
+        Cancelled,
+        Completed
+    }
+
+    public class Reservation
+    {
+        public int Id { get; set; }
+        public int FlightId { get; set; }
+        public int UserId { get; set; }
+        public DateTime ReservationDate { get; set; }
+        public ReservationStatus Status { get; set; }
+        public decimal TotalAmount { get; set; }
+        
+        public virtual Flight Flight { get; set; }
+        public virtual User User { get; set; }
+        public virtual ICollection<SeatBooking> SeatBookings { get; set; }
+        public virtual Payment Payment { get; set; }
+        public virtual Cancellation Cancellation { get; set; }
+    }
+}
+
+// Models/SeatBooking.cs
+namespace AirTicket.Models
+{
+    public enum SeatClass
+    {
+        Business,
+        Economy
+    }
+
+    public class SeatBooking
+    {
+        public int Id { get; set; }
+        public int ReservationId { get; set; }
+        public string SeatNumber { get; set; }
+        public SeatClass SeatClass { get; set; }
+        public decimal Price { get; set; }
+        public string PassengerName { get; set; }
+        
+        public virtual Reservation Reservation { get; set; }
+    }
+}
+
+// Models/Payment.cs
+namespace AirTicket.Models
+{
+    public enum PaymentStatus
+    {
+        Pending,
+        Completed,
+        Failed,
+        Refunded
+    }
+
+    public class Payment
+    {
+        public int Id { get; set; }
+        public int ReservationId { get; set; }
+        public decimal Amount { get; set; }
+        public DateTime PaymentDate { get; set; }
+        public string TransactionId { get; set; }
+        public PaymentStatus Status { get; set; }
+        public string PaymentMethod { get; set; }
+        
+        public virtual Reservation Reservation { get; set; }
+    }
+}
+
+// Models/Cancellation.cs
+namespace AirTicket.Models
+{
+    public class Cancellation
+    {
+        public int Id { get; set; }
+        public int ReservationId { get; set; }
+        public DateTime CancellationDate { get; set; }
+        public decimal RefundAmount { get; set; }
+        public string Reason { get; set; }
+        
+        public virtual Reservation Reservation { get; set; }
+    }
+}
+
+// DBContext
+// =========
+
+// Data/AppDbContext.cs
+using Microsoft.EntityFrameworkCore;
+using AirTicket.Models;
+
+namespace AirTicket.Data
+{
+    public class AppDbContext : DbContext
+    {
+        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
+        {
+        }
+
+        public DbSet<Flight> Flights { get; set; }
+        public DbSet<User> Users { get; set; }
+        public DbSet<Reservation> Reservations { get; set; }
+        public DbSet<SeatBooking> SeatBookings { get; set; }
+        public DbSet<Payment> Payments { get; set; }
+        public DbSet<Cancellation> Cancellations { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            // Configure relationships
+            modelBuilder.Entity<Reservation>()
+                .HasOne(r => r.Flight)
+                .WithMany(f => f.Reservations)
+                .HasForeignKey(r => r.FlightId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Reservation>()
+                .HasOne(r => r.User)
+                .WithMany(u => u.Reservations)
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<SeatBooking>()
+                .HasOne(sb => sb.Reservation)
+                .WithMany(r => r.SeatBookings)
+                .HasForeignKey(sb => sb.ReservationId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Payment>()
+                .HasOne(p => p.Reservation)
+                .WithOne(r => r.Payment)
+                .HasForeignKey<Payment>(p => p.ReservationId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Cancellation>()
+                .HasOne(c => c.Reservation)
+                .WithOne(r => r.Cancellation)
+                .HasForeignKey<Cancellation>(c => c.ReservationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        }
+    }
+}
+
+// AUTH CONFIGURATION
+// =================
+
+// Auth/JwtSettings.cs
+namespace AirTicket.Auth
+{
+    public class JwtSettings
+    {
+        public string Secret { get; set; }
+        public string Issuer { get; set; }
+        public string Audience { get; set; }
+        public int ExpirationInMinutes { get; set; }
+    }
+}
+
+// Auth/AuthService.cs
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using AirTicket.Models;
+using AirTicket.Data;
+using System.Security.Cryptography;
+
+namespace AirTicket.Auth
+{
+    public class AuthService
+    {
+        private readonly JwtSettings _jwtSettings;
+        private readonly AppDbContext _context;
+
+        public AuthService(IOptions<JwtSettings> jwtSettings, AppDbContext context)
+        {
+            _jwtSettings = jwtSettings.Value;
+            _context = context;
+        }
+
+        public string GenerateJwtToken(User user)
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes(_jwtSettings.Secret);
+            
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new[]
+                {
+                    new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                    new Claim(ClaimTypes.Name, user.Username),
+                    new Claim(ClaimTypes.Email, user.Email),
+                    new Claim(ClaimTypes.Role, user.Role)
+                }),
+                Expires = DateTime.UtcNow.AddMinutes(_jwtSettings.ExpirationInMinutes),
+                Issuer = _jwtSettings.Issuer,
+                Audience = _jwtSettings.Audience,
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+            };
+            
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            return tokenHandler.WriteToken(token);
+        }
+
+        public string HashPassword(string password)
+        {
+            using var sha256 = SHA256.Create();
+            var bytes = Encoding.UTF8.GetBytes(password);
+            var hash = sha256.ComputeHash(bytes);
+            return Convert.ToBase64String(hash);
+        }
+
+        public bool VerifyPassword(string password, string passwordHash)
+        {
+            string hashedPassword = HashPassword(password);
+            return hashedPassword == passwordHash;
+        }
+    }
+}
+
+// DTOs
+// ====
+
+// DTOs/UserDtos.cs
+namespace AirTicket.DTOs
+{
+    public class RegisterUserDto
+    {
+        public string Username { get; set; }
+        public string Email { get; set; }
+        public string Password { get; set; }
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+        public string PhoneNumber { get; set; }
+    }
+
+    public class LoginDto
+    {
+        public string Username { get; set; }
+        public string Password { get; set; }
+    }
+
+    public class UserDto
+    {
+        public int Id { get; set; }
+        public string Username { get; set; }
+        public string Email { get; set; }
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+        public string PhoneNumber { get; set; }
+        public string Role { get; set; }
+    }
+}
+
+// DTOs/FlightDtos.cs
+namespace AirTicket.DTOs
+{
+    public class FlightDto
+    {
+        public int Id { get; set; }
+        public string FlightNumber { get; set; }
+        public string AirlineName { get; set; }
+        public string DepartureCity { get; set; }
+        public string ArrivalCity { get; set; }
+        public DateTime DepartureTime { get; set; }
+        public DateTime ArrivalTime { get; set; }
+        public int AvailableBusinessSeats { get; set; }
+        public int AvailableEconomySeats { get; set; }
+        public decimal BusinessClassPrice { get; set; }
+        public decimal EconomyClassPrice { get; set; }
+    }
+
+    public class CreateFlightDto
+    {
+        public string FlightNumber { get; set; }
+        public string AirlineName { get; set; }
+        public string DepartureCity { get; set; }
+        public string ArrivalCity { get; set; }
+        public DateTime DepartureTime { get; set; }
+        public DateTime ArrivalTime { get; set; }
+        public int TotalBusinessSeats { get; set; }
+        public int TotalEconomySeats { get; set; }
+        public decimal BusinessClassPrice { get; set; }
+        public decimal EconomyClassPrice { get; set; }
+    }
+
+    public class UpdateFlightDto
+    {
+        public string FlightNumber { get; set; }
+        public string AirlineName { get; set; }
+        public string DepartureCity { get; set; }
+        public string ArrivalCity { get; set; }
+        public DateTime DepartureTime { get; set; }
+        public DateTime ArrivalTime { get; set; }
+        public decimal BusinessClassPrice { get; set; }
+        public decimal EconomyClassPrice { get; set; }
+    }
+}
+
+// DTOs/ReservationDtos.cs
+namespace AirTicket.DTOs
+{
+    public class ReservationDto
+    {
+        public int Id { get; set; }
+        public int FlightId { get; set; }
+        public DateTime ReservationDate { get; set; }
+        public string Status { get; set; }
+        public decimal TotalAmount { get; set; }
+        public List<SeatBookingDto> SeatBookings { get; set; }
+        public FlightDto Flight { get; set; }
+    }
+
+    public class CreateReservationDto
+    {
+        public int FlightId { get; set; }
+        public List<CreateSeatBookingDto> SeatBookings { get; set; }
+    }
+
+    public class SeatBookingDto
+    {
+        public int Id { get; set; }
+        public string SeatNumber { get; set; }
+        public string SeatClass { get; set; }
+        public decimal Price { get; set; }
+        public string PassengerName { get; set; }
+    }
+
+    public class CreateSeatBookingDto
+    {
+        public string SeatClass { get; set; } // "Business" or "Economy"
+        public string PassengerName { get; set; }
+    }
+}
+
+// DTOs/PaymentDtos.cs
+namespace AirTicket.DTOs
+{
+    public class PaymentDto
+    {
+        public int Id { get; set; }
+        public int ReservationId { get; set; }
+        public decimal Amount { get; set; }
+        public DateTime PaymentDate { get; set; }
+        public string TransactionId { get; set; }
+        public string Status { get; set; }
+        public string PaymentMethod { get; set; }
+    }
+
+    public class CreatePaymentDto
+    {
+        public int ReservationId { get; set; }
+        public string PaymentMethod { get; set; }
+    }
+}
+
+// DTOs/CancellationDtos.cs
+namespace AirTicket.DTOs
+{
+    public class CancellationDto
+    {
+        public int Id { get; set; }
+        public int ReservationId { get; set; }
+        public DateTime CancellationDate { get; set; }
+        public decimal RefundAmount { get; set; }
+        public string Reason { get; set; }
+    }
+
+    public class CreateCancellationDto
+    {
+        public int ReservationId { get; set; }
+        public string Reason { get; set; }
+    }
+}
+
+// CONTROLLERS
+// ==========
+
+// Controllers/AuthController.cs
+using Microsoft.AspNetCore.Mvc;
+using AirTicket.Auth;
+using AirTicket.Data;
+using AirTicket.DTOs;
+using AirTicket.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace AirTicket.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class AuthController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+        private readonly AuthService _authService;
+
+        public AuthController(AppDbContext context, AuthService authService)
+        {
+            _context = context;
+            _authService = authService;
+        }
+
+        [HttpPost("register")]
+        public async Task<IActionResult> Register(RegisterUserDto registerDto)
+        {
+            if (await _context.Users.AnyAsync(u => u.Username == registerDto.Username))
+            {
+                return BadRequest(new { message = "Username already exists" });
+            }
+
+            if (await _context.Users.AnyAsync(u => u.Email == registerDto.Email))
+            {
+                return BadRequest(new { message = "Email already exists" });
+            }
+
+            var user = new User
+            {
+                Username = registerDto.Username,
+                Email = registerDto.Email,
+                FirstName = registerDto.FirstName,
+                LastName = registerDto.LastName,
+                PhoneNumber = registerDto.PhoneNumber,
+                PasswordHash = _authService.HashPassword(registerDto.Password),
+                Role = "User" // Default role for new registrations
+            };
+
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                user = new UserDto
+                {
+                    Id = user.Id,
+                    Username = user.Username,
+                    Email = user.Email,
+                    FirstName = user.FirstName,
+                    LastName = user.LastName,
+                    PhoneNumber = user.PhoneNumber,
+                    Role = user.Role
+                },
+                token = _authService.GenerateJwtToken(user)
+            });
+        }
+
+        [HttpPost("login")]
+        public async Task<IActionResult> Login(LoginDto loginDto)
+        {
+            var user = await _context.Users
+                .SingleOrDefaultAsync(u => u.Username == loginDto.Username);
+
+            if (user == null || !_authService.VerifyPassword(loginDto.Password, user.PasswordHash))
+            {
+                return Unauthorized(new { message = "Invalid username or password" });
+            }
+
+            return Ok(new
+            {
+                user = new UserDto
+                {
+                    Id = user.Id,
+                    Username = user.Username,
+                    Email = user.Email,
+                    FirstName = user.FirstName,
+                    LastName = user.LastName,
+                    PhoneNumber = user.PhoneNumber,
+                    Role = user.Role
+                },
+                token = _authService.GenerateJwtToken(user)
+            });
+        }
+    }
+}
+
+// Controllers/FlightsController.cs
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using AirTicket.Data;
+using AirTicket.DTOs;
+using AirTicket.Models;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
+
+namespace AirTicket.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class FlightsController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public FlightsController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<FlightDto>>> GetFlights(
+            [FromQuery] string departureCity = null,
+            [FromQuery] string arrivalCity = null,
+            [FromQuery] DateTime? departureDate = null)
+        {
+            var query = _context.Flights
+                .Where(f => f.IsActive)
+                .AsQueryable();
+
+            if (!string.IsNullOrEmpty(departureCity))
+            {
+                query = query.Where(f => f.DepartureCity.ToLower().Contains(departureCity.ToLower()));
+            }
+
+            if (!string.IsNullOrEmpty(arrivalCity))
+            {
+                query = query.Where(f => f.ArrivalCity.ToLower().Contains(arrivalCity.ToLower()));
+            }
+
+            if (departureDate.HasValue)
+            {
+                var date = departureDate.Value.Date;
+                query = query.Where(f => f.DepartureTime.Date == date);
+            }
+
+            var flights = await query.ToListAsync();
+
+            return flights.Select(f => new FlightDto
+            {
+                Id = f.Id,
+                FlightNumber = f.FlightNumber,
+                AirlineName = f.AirlineName,
+                DepartureCity = f.DepartureCity,
+                ArrivalCity = f.ArrivalCity,
+                DepartureTime = f.DepartureTime,
+                ArrivalTime = f.ArrivalTime,
+                AvailableBusinessSeats = f.AvailableBusinessSeats,
+                AvailableEconomySeats = f.AvailableEconomySeats,
+                BusinessClassPrice = f.BusinessClassPrice,
+                EconomyClassPrice = f.EconomyClassPrice
+            }).ToList();
+        }
+
+        [HttpGet("{id}")]
+        public async Task<ActionResult<FlightDto>> GetFlight(int id)
+        {
+            var flight = await _context.Flights.FindAsync(id);
+
+            if (flight == null || !flight.IsActive)
+            {
+                return NotFound();
+            }
+
+            return new FlightDto
+            {
+                Id = flight.Id,
+                FlightNumber = flight.FlightNumber,
+                AirlineName = flight.AirlineName,
+                DepartureCity = flight.DepartureCity,
+                ArrivalCity = flight.ArrivalCity,
+                DepartureTime = flight.DepartureTime,
+                ArrivalTime = flight.ArrivalTime,
+                AvailableBusinessSeats = flight.AvailableBusinessSeats,
+                AvailableEconomySeats = flight.AvailableEconomySeats,
+                BusinessClassPrice = flight.BusinessClassPrice,
+                EconomyClassPrice = flight.EconomyClassPrice
+            };
+        }
+
+        [HttpPost]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<FlightDto>> CreateFlight(CreateFlightDto createFlightDto)
+        {
+            var flight = new Flight
+            {
+                FlightNumber = createFlightDto.FlightNumber,
+                AirlineName = createFlightDto.AirlineName,
+                DepartureCity = createFlightDto.DepartureCity,
+                ArrivalCity = createFlightDto.ArrivalCity,
+                DepartureTime = createFlightDto.DepartureTime,
+                ArrivalTime = createFlightDto.ArrivalTime,
+                TotalBusinessSeats = createFlightDto.TotalBusinessSeats,
+                TotalEconomySeats = createFlightDto.TotalEconomySeats,
+                AvailableBusinessSeats = createFlightDto.TotalBusinessSeats,  // Initially all seats are available
+                AvailableEconomySeats = createFlightDto.TotalEconomySeats,
+                BusinessClassPrice = createFlightDto.BusinessClassPrice,
+                EconomyClassPrice = createFlightDto.EconomyClassPrice,
+                IsActive = true
+            };
+
+            _context.Flights.Add(flight);
+            await _context.SaveChangesAsync();
+
+            return CreatedAtAction(nameof(GetFlight), new { id = flight.Id }, new FlightDto
+            {
+                Id = flight.Id,
+                FlightNumber = flight.FlightNumber,
+                AirlineName = flight.AirlineName,
+                DepartureCity = flight.DepartureCity,
+                ArrivalCity = flight.ArrivalCity,
+                DepartureTime = flight.DepartureTime,
+                ArrivalTime = flight.ArrivalTime,
+                AvailableBusinessSeats = flight.AvailableBusinessSeats,
+                AvailableEconomySeats = flight.AvailableEconomySeats,
+                BusinessClassPrice = flight.BusinessClassPrice,
+                EconomyClassPrice = flight.EconomyClassPrice
+            });
+        }
+
+        [HttpPut("{id}")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> UpdateFlight(int id, UpdateFlightDto updateFlightDto)
+        {
+            var flight = await _context.Flights.FindAsync(id);
+            if (flight == null || !flight.IsActive)
+            {
+                return NotFound();
+            }
+
+            flight.FlightNumber = updateFlightDto.FlightNumber;
+            flight.AirlineName = updateFlightDto.AirlineName;
+            flight.DepartureCity = updateFlightDto.DepartureCity;
+            flight.ArrivalCity = updateFlightDto.ArrivalCity;
+            flight.DepartureTime = updateFlightDto.DepartureTime;
+            flight.ArrivalTime = updateFlightDto.ArrivalTime;
+            flight.BusinessClassPrice = updateFlightDto.BusinessClassPrice;
+            flight.EconomyClassPrice = updateFlightDto.EconomyClassPrice;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!FlightExists(id))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> DeleteFlight(int id)
+        {
+            var flight = await _context.Flights.FindAsync(id);
+            if (flight == null)
+            {
+                return NotFound();
+            }
+
+            // Soft delete
+            flight.IsActive = false;
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        private bool FlightExists(int id)
+        {
+            return _context.Flights.Any(e => e.Id == id);
+        }
+    }
+}
+
+// Controllers/ReservationsController.cs
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using AirTicket.Data;
+using AirTicket.DTOs;
+using AirTicket.Models;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
+
+namespace AirTicket.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    [Authorize]
+    public class ReservationsController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public ReservationsController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<ReservationDto>>> GetReservations()
+        {
+            int userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+            bool isAdmin = User.IsInRole("Admin");
+
+            var query = _context.Reservations
+                .Include(r => r.Flight)
+                .Include(r => r.SeatBookings)
+                .AsQueryable();
+
+            if (!isAdmin)
+            {
+                // Regular users can only see their own reservations
+                query = query.Where(r => r.UserId == userId);
+            }
+
+            var reservations = await query.ToListAsync();
+
+            return reservations.Select(r => new ReservationDto
+            {
+                Id = r.Id,
+                FlightId = r.FlightId,
+                ReservationDate = r.ReservationDate,
+                Status = r.Status.ToString(),
+                TotalAmount = r.TotalAmount,
+                SeatBookings = r.SeatBookings.Select(sb => new SeatBookingDto
+                {
+                    Id = sb.Id,
+                    SeatNumber = sb.SeatNumber,
+                    SeatClass = sb.SeatClass.ToString(),
+                    Price = sb.Price,
+                    PassengerName = sb.PassengerName
+                }).ToList(),
+                Flight = new FlightDto
+                {
+                    Id = r.Flight.Id,
+                    FlightNumber = r.Flight.FlightNumber,
+                    AirlineName = r.Flight.AirlineName,
+                    DepartureCity = r.Flight.DepartureCity,
+                    ArrivalCity = r.Flight.ArrivalCity,
+                    DepartureTime = r.Flight.DepartureTime,
+                    ArrivalTime = r.Flight.ArrivalTime,
+                    AvailableBusinessSeats = r.Flight.AvailableBusinessSeats,
+                    AvailableEconomySeats = r.Flight.AvailableEconomySeats,
+                    BusinessClassPrice = r.Flight.BusinessClassPrice,
+                    EconomyClassPrice = r.Flight.EconomyClassPrice
+                }
+            }).ToList();
+        }
+
+        [HttpGet("{id}")]
+        public async Task<ActionResult<ReservationDto>> GetReservation(int id)
+        {
+            int userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+            bool isAdmin = User.IsInRole("Admin");
+
+            var reservation = await _context.Reservations
+                .Include(r => r.Flight)
+                .Include(r => r.SeatBookings)
+                .FirstOrDefaultAsync(r => r.Id == id);
+
+            if (reservation == null)
+            {
+                return NotFound();
+            }
+
+            // Check if the user is authorized to see this reservation
+            if (!isAdmin && reservation.UserId != userId)
+            {
+                return Forbid();
+            }
+
+            return new ReservationDto
+            {
+                Id = reservation.Id,
+                FlightId = reservation.FlightId,
+                ReservationDate = reservation.ReservationDate,
+                Status = reservation.Status.ToString(),
+                TotalAmount = reservation.TotalAmount,
+                SeatBookings = reservation.SeatBookings.Select(sb => new SeatBookingDto
+                {
+                    Id = sb.Id,
+                    SeatNumber = sb.SeatNumber,
+                    SeatClass = sb.SeatClass.ToString(),
+                    Price = sb.Price,
+                    PassengerName = sb.PassengerName
+                }).ToList(),
+                Flight = new FlightDto
+                {
+                    Id = reservation.Flight.Id,
+                    FlightNumber = reservation.Flight.FlightNumber,
+                    AirlineName = reservation.Flight.AirlineName,
+                    DepartureCity = reservation.Flight.DepartureCity,
+                    ArrivalCity = reservation.Flight.ArrivalCity,
+                    DepartureTime = reservation.Flight.DepartureTime,
+                    ArrivalTime = reservation.Flight.ArrivalTime,
+                    AvailableBusinessSeats = reservation.Flight.AvailableBusinessSeats,
+                    AvailableEconomySeats = reservation.Flight.AvailableEconomySeats,
+                    BusinessClassPrice = reservation.Flight.BusinessClassPrice,
+                    EconomyClassPrice = reservation.Flight.EconomyClassPrice
+                }
+            };
+        }
+
+        [HttpPost]
+        public async Task<ActionResult<ReservationDto>> CreateReservation(CreateReservationDto createReservationDto)
+        {
+            int userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+
+            // Check if flight exists
+            var flight = await _context.Flights
+                .FirstOrDefaultAsync(f => f.Id == createReservationDto.FlightId && f.IsActive);
+
+            if (flight == null)
+            {
+                return BadRequest(new { message = "Flight not found or inactive" });
+            }
+
+            // Count seats by class
+            int businessSeatsRequested = createReservationDto.SeatBookings.Count(sb => sb.SeatClass.ToLower() == "business");
+            int economySeatsRequested = createReservationDto.SeatBookings.Count(sb => sb.SeatClass.ToLower() == "economy");
+
+            // Check if enough seats are available
+            if (flight.AvailableBusinessSeats < businessSeatsRequested)
+            {
+                return BadRequest(new { message = "Not enough business class seats available" });
+            }
+
+            if (flight.AvailableEconomySeats < economySeatsRequested)
+            {
+                return BadRequest(new { message = "Not enough economy class seats available" });
+            }
+
+            // Calculate total amount
+            decimal totalAmount = (businessSeatsRequested * flight.BusinessClassPrice) + 
+                                  (economySeatsRequested * flight.EconomyClassPrice);
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                // Create the reservation
+                var reservation = new Reservation
+                {
+                    FlightId = flight.Id,
+                    UserId = userId,
+                    ReservationDate =
+
+
+--------------------------------------------------------------------------
+
+
+
+// Continuing from ReservationsController.cs - CreateReservation method
+                // Create the reservation
+                var reservation = new Reservation
+                {
+                    FlightId = flight.Id,
+                    UserId = userId,
+                    ReservationDate = DateTime.UtcNow,
+                    Status = ReservationStatus.Pending,
+                    TotalAmount = totalAmount
+                };
+
+                _context.Reservations.Add(reservation);
+                await _context.SaveChangesAsync();
+
+                // Create seat bookings
+                var seatBookings = new List<SeatBooking>();
+                
+                // Simple seat assignment algorithm - just assign sequential seats
+                // In a real system, you'd have a more sophisticated seat selection mechanism
+                int businessSeatCounter = 1;
+                int economySeatCounter = 1;
+
+                foreach (var bookingDto in createReservationDto.SeatBookings)
+                {
+                    var seatClass = bookingDto.SeatClass.ToLower() == "business" 
+                        ? SeatClass.Business 
+                        : SeatClass.Economy;
+                    
+                    string seatNumber;
+                    decimal price;
+                    
+                    if (seatClass == SeatClass.Business)
+                    {
+                        seatNumber = $"B{businessSeatCounter++}";
+                        price = flight.BusinessClassPrice;
+                    }
+                    else
+                    {
+                        seatNumber = $"E{economySeatCounter++}";
+                        price = flight.EconomyClassPrice;
+                    }
+
+                    var seatBooking = new SeatBooking
+                    {
+                        ReservationId = reservation.Id,
+                        SeatNumber = seatNumber,
+                        SeatClass = seatClass,
+                        Price = price,
+                        PassengerName = bookingDto.PassengerName
+                    };
+
+                    seatBookings.Add(seatBooking);
+                }
+
+                _context.SeatBookings.AddRange(seatBookings);
+
+                // Update available seats
+                flight.AvailableBusinessSeats -= businessSeatsRequested;
+                flight.AvailableEconomySeats -= economySeatsRequested;
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                // Return the reservation details
+                return CreatedAtAction(
+                    nameof(GetReservation), 
+                    new { id = reservation.Id }, 
+                    new ReservationDto
+                    {
+                        Id = reservation.Id,
+                        FlightId = reservation.FlightId,
+                        ReservationDate = reservation.ReservationDate,
+                        Status = reservation.Status.ToString(),
+                        TotalAmount = reservation.TotalAmount,
+                        SeatBookings = seatBookings.Select(sb => new SeatBookingDto
+                        {
+                            Id = sb.Id,
+                            SeatNumber = sb.SeatNumber,
+                            SeatClass = sb.SeatClass.ToString(),
+                            Price = sb.Price,
+                            PassengerName = sb.PassengerName
+                        }).ToList(),
+                        Flight = new FlightDto
+                        {
+                            Id = flight.Id,
+                            FlightNumber = flight.FlightNumber,
+                            AirlineName = flight.AirlineName,
+                            DepartureCity = flight.DepartureCity,
+                            ArrivalCity = flight.ArrivalCity,
+                            DepartureTime = flight.DepartureTime,
+                            ArrivalTime = flight.ArrivalTime,
+                            AvailableBusinessSeats = flight.AvailableBusinessSeats,
+                            AvailableEconomySeats = flight.AvailableEconomySeats,
+                            BusinessClassPrice = flight.BusinessClassPrice,
+                            EconomyClassPrice = flight.EconomyClassPrice
+                        }
+                    }
+                );
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { message = $"Internal server error: {ex.Message}" });
+            }
+        }
+
+        [HttpPut("{id}/cancel")]
+        public async Task<IActionResult> CancelReservation(int id, CreateCancellationDto cancellationDto)
+        {
+            int userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+            bool isAdmin = User.IsInRole("Admin");
+
+            var reservation = await _context.Reservations
+                .Include(r => r.Flight)
+                .Include(r => r.SeatBookings)
+                .Include(r => r.Payment)
+                .FirstOrDefaultAsync(r => r.Id == id);
+
+            if (reservation == null)
+            {
+                return NotFound();
+            }
+
+            // Check if the user is authorized to cancel this reservation
+            if (!isAdmin && reservation.UserId != userId)
+            {
+                return Forbid();
+            }
+
+            // Check if the reservation can be cancelled
+            if (reservation.Status == ReservationStatus.Cancelled)
+            {
+                return BadRequest(new { message = "Reservation is already cancelled" });
+            }
+
+            if (reservation.Status == ReservationStatus.Completed)
+            {
+                return BadRequest(new { message = "Completed reservations cannot be cancelled" });
+            }
+
+            if (reservation.Flight.DepartureTime <= DateTime.UtcNow)
+            {
+                return BadRequest(new { message = "Cannot cancel reservation after flight departure" });
+            }
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                // Update reservation status
+                reservation.Status = ReservationStatus.Cancelled;
+
+                // Calculate refund amount (could have more complex logic based on cancellation policy)
+                // For simplicity, we'll refund 80% if payment exists
+                decimal refundAmount = 0;
+                if (reservation.Payment != null && reservation.Payment.Status == PaymentStatus.Completed)
+                {
+                    refundAmount = reservation.TotalAmount * 0.8m;
+                    
+                    // Update payment status
+                    reservation.Payment.Status = PaymentStatus.Refunded;
+                }
+
+                // Create cancellation record
+                var cancellation = new Cancellation
+                {
+                    ReservationId = reservation.Id,
+                    CancellationDate = DateTime.UtcNow,
+                    RefundAmount = refundAmount,
+                    Reason = cancellationDto.Reason
+                };
+
+                _context.Cancellations.Add(cancellation);
+
+                // Return seats to available inventory
+                var flight = reservation.Flight;
+                foreach (var booking in reservation.SeatBookings)
+                {
+                    if (booking.SeatClass == SeatClass.Business)
+                    {
+                        flight.AvailableBusinessSeats++;
+                    }
+                    else
+                    {
+                        flight.AvailableEconomySeats++;
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { message = "Reservation cancelled successfully", refundAmount });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { message = $"Internal server error: {ex.Message}" });
+            }
+        }
+    }
+}
+
+// Controllers/PaymentsController.cs
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using AirTicket.Data;
+using AirTicket.DTOs;
+using AirTicket.Models;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
+
+namespace AirTicket.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    [Authorize]
+    public class PaymentsController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public PaymentsController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<IEnumerable<PaymentDto>>> GetPayments()
+        {
+            var payments = await _context.Payments
+                .Include(p => p.Reservation)
+                .ToListAsync();
+
+            return payments.Select(p => new PaymentDto
+            {
+                Id = p.Id,
+                ReservationId = p.ReservationId,
+                Amount = p.Amount,
+                PaymentDate = p.PaymentDate,
+                TransactionId = p.TransactionId,
+                Status = p.Status.ToString(),
+                PaymentMethod = p.PaymentMethod
+            }).ToList();
+        }
+
+        [HttpGet("{id}")]
+        public async Task<ActionResult<PaymentDto>> GetPayment(int id)
+        {
+            int userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+            bool isAdmin = User.IsInRole("Admin");
+
+            var payment = await _context.Payments
+                .Include(p => p.Reservation)
+                .FirstOrDefaultAsync(p => p.Id == id);
+
+            if (payment == null)
+            {
+                return NotFound();
+            }
+
+            // Check if the user is authorized to see this payment
+            if (!isAdmin && payment.Reservation.UserId != userId)
+            {
+                return Forbid();
+            }
+
+            return new PaymentDto
+            {
+                Id = payment.Id,
+                ReservationId = payment.ReservationId,
+                Amount = payment.Amount,
+                PaymentDate = payment.PaymentDate,
+                TransactionId = payment.TransactionId,
+                Status = payment.Status.ToString(),
+                PaymentMethod = payment.PaymentMethod
+            };
+        }
+
+        [HttpPost]
+        public async Task<ActionResult<PaymentDto>> CreatePayment(CreatePaymentDto createPaymentDto)
+        {
+            int userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+            bool isAdmin = User.IsInRole("Admin");
+
+            // Check if reservation exists
+            var reservation = await _context.Reservations
+                .Include(r => r.Payment)
+                .FirstOrDefaultAsync(r => r.Id == createPaymentDto.ReservationId);
+
+            if (reservation == null)
+            {
+                return BadRequest(new { message = "Reservation not found" });
+            }
+
+            // Check if the user is authorized to pay for this reservation
+            if (!isAdmin && reservation.UserId != userId)
+            {
+                return Forbid();
+            }
+
+            // Check if payment already exists
+            if (reservation.Payment != null)
+            {
+                return BadRequest(new { message = "Payment already exists for this reservation" });
+            }
+
+            // Check if reservation is in a payable state
+            if (reservation.Status != ReservationStatus.Pending)
+            {
+                return BadRequest(new { message = $"Cannot process payment for reservation in {reservation.Status} state" });
+            }
+
+            // In a real system, you would integrate with a payment gateway here
+            // For now, we'll simulate a successful payment
+
+            // Generate a random transaction ID
+            string transactionId = Guid.NewGuid().ToString("N");
+
+            // Create the payment
+            var payment = new Payment
+            {
+                ReservationId = reservation.Id,
+                Amount = reservation.TotalAmount,
+                PaymentDate = DateTime.UtcNow,
+                TransactionId = transactionId,
+                Status = PaymentStatus.Completed,
+                PaymentMethod = createPaymentDto.PaymentMethod
+            };
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                _context.Payments.Add(payment);
+                
+                // Update reservation status
+                reservation.Status = ReservationStatus.Confirmed;
+                
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return CreatedAtAction(
+                    nameof(GetPayment), 
+                    new { id = payment.Id }, 
+                    new PaymentDto
+                    {
+                        Id = payment.Id,
+                        ReservationId = payment.ReservationId,
+                        Amount = payment.Amount,
+                        PaymentDate = payment.PaymentDate,
+                        TransactionId = payment.TransactionId,
+                        Status = payment.Status.ToString(),
+                        PaymentMethod = payment.PaymentMethod
+                    }
+                );
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { message = $"Internal server error: {ex.Message}" });
+            }
+        }
+    }
+}
+
+// Controllers/UsersController.cs
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using AirTicket.Data;
+using AirTicket.DTOs;
+using AirTicket.Models;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
+
+namespace AirTicket.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    [Authorize]
+    public class UsersController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public UsersController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<IEnumerable<UserDto>>> GetUsers()
+        {
+            var users = await _context.Users.ToListAsync();
+
+            return users.Select(u => new UserDto
+            {
+                Id = u.Id,
+                Username = u.Username,
+                Email = u.Email,
+                FirstName = u.FirstName,
+                LastName = u.LastName,
+                PhoneNumber = u.PhoneNumber,
+                Role = u.Role
+            }).ToList();
+        }
+
+        [HttpGet("{id}")]
+        public async Task<ActionResult<UserDto>> GetUser(int id)
+        {
+            int userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+            bool isAdmin = User.IsInRole("Admin");
+
+            // Regular users can only see their own profile
+            if (!isAdmin && id != userId)
+            {
+                return Forbid();
+            }
+
+            var user = await _context.Users.FindAsync(id);
+
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            return new UserDto
+            {
+                Id = user.Id,
+                Username = user.Username,
+                Email = user.Email,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                PhoneNumber = user.PhoneNumber,
+                Role = user.Role
+            };
+        }
+
+        [HttpGet("me")]
+        public async Task<ActionResult<UserDto>> GetCurrentUser()
+        {
+            int userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+            var user = await _context.Users.FindAsync(userId);
+
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            return new UserDto
+            {
+                Id = user.Id,
+                Username = user.Username,
+                Email = user.Email,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                PhoneNumber = user.PhoneNumber,
+                Role = user.Role
+            };
+        }
+
+        [HttpPut("me")]
+        public async Task<IActionResult> UpdateCurrentUser(UserDto userDto)
+        {
+            int userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+            var user = await _context.Users.FindAsync(userId);
+
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            // Don't allow changing username or role through this endpoint
+            user.Email = userDto.Email;
+            user.FirstName = userDto.FirstName;
+            user.LastName = userDto.LastName;
+            user.PhoneNumber = userDto.PhoneNumber;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!UserExists(userId))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+
+            return NoContent();
+        }
+
+        [HttpPut("{id}/role")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> UpdateUserRole(int id, [FromBody] string role)
+        {
+            var user = await _context.Users.FindAsync(id);
+
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            // Validate role
+            if (role != "Admin" && role != "User")
+            {
+                return BadRequest(new { message = "Invalid role. Must be 'Admin' or 'User'" });
+            }
+
+            user.Role = role;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!UserExists(id))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+
+            return NoContent();
+        }
+
+        private bool UserExists(int id)
+        {
+            return _context.Users.Any(e => e.Id == id);
+        }
+    }
+}
+
+// PROGRAM.CS - APPLICATION STARTUP
+// ===============================
+
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using System.Text;
+using AirTicket.Auth;
+using AirTicket.Data;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddControllers();
+
+// Add DbContext
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Configure Authentication
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+builder.Services.Configure<JwtSettings>(jwtSettings);
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtSettings["Issuer"],
+            ValidAudience = jwtSettings["Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Secret"]))
+        };
+    });
+
+// Add Authorization
+builder.Services.AddAuthorization();
+
+// Register AuthService
+builder.Services.AddScoped<AuthService>();
+
+// Configure Swagger
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "AirTicket API", Version = "v1" });
+
+    // Add JWT Authentication to Swagger
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
+// CORS Policy
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseCors();
+
+app.UseHttpsRedirection();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllers();
+
+// Seed the database with initial data
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<AppDbContext>();
+        var authService = services.GetRequiredService<AuthService>();
+        SeedData(context, authService);
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "An error occurred while seeding the database.");
+    }
+}
+
+app.Run();
+
+// Database Seeding
+void SeedData(AppDbContext context, AuthService authService)
+{
+    context.Database.EnsureCreated();
+
+    // Check if we already have users
+    if (!context.Users.Any())
+    {
+        // Create admin user
+        var adminUser = new AirTicket.Models.User
+        {
+            Username = "admin",
+            Email = "admin@airticket.com",
+            FirstName = "Admin",
+            LastName = "User",
+            PhoneNumber = "1234567890",
+            PasswordHash = authService.HashPassword("Admin@123"),
+            Role = "Admin"
+        };
+
+        context.Users.Add(adminUser);
+
+        // Create regular user
+        var regularUser = new AirTicket.Models.User
+        {
+            Username = "user",
+            Email = "user@example.com",
+            FirstName = "Regular",
+            LastName = "User",
+            PhoneNumber = "0987654321",
+            PasswordHash = authService.HashPassword("User@123"),
+            Role = "User"
+        };
+
+        context.Users.Add(regularUser);
+        context.SaveChanges();
+    }
+
+    // Check if we already have flights
+    if (!context.Flights.Any())
+    {
+        // Add sample flights
+        var flights = new List<AirTicket.Models.Flight>
+        {
+            new AirTicket.Models.Flight
+            {
+                FlightNumber = "AA101",
+                AirlineName = "American Airlines",
+                DepartureCity = "New York",
+                ArrivalCity = "Los Angeles",
+                DepartureTime = DateTime.UtcNow.AddDays(5).AddHours(10),
+                ArrivalTime = DateTime.UtcNow.AddDays(5).AddHours(13),
+                TotalBusinessSeats = 20,
+                TotalEconomySeats = 100,
+                AvailableBusinessSeats = 20,
+                AvailableEconomySeats = 100,
+                BusinessClassPrice = 500.00m,
+                EconomyClassPrice = 200.00m,
+                IsActive = true
+            },
+            new AirTicket.Models.Flight
+            {
+                FlightNumber = "UA202",
+                AirlineName = "United Airlines",
+                DepartureCity = "Chicago",
+                ArrivalCity = "Miami",
+                DepartureTime = DateTime.UtcNow.AddDays(7).AddHours(14),
+                ArrivalTime = DateTime.UtcNow.AddDays(7).AddHours(17),
+                TotalBusinessSeats = 15,
+                TotalEconomySeats = 120,
+                AvailableBusinessSeats = 15,
+                AvailableEconomySeats = 120,
+                BusinessClassPrice = 450.00m,
+                EconomyClassPrice = 180.00m,
+                IsActive = true
+            },
+            new AirTicket.Models.Flight
+            {
+                FlightNumber = "DL303",
+                AirlineName = "Delta Airlines",
+                DepartureCity = "Atlanta",
+                ArrivalCity = "Seattle",
+                DepartureTime = DateTime.UtcNow.AddDays(10).AddHours(9),
+                ArrivalTime = DateTime.UtcNow.AddDays(10).AddHours(12),
+                TotalBusinessSeats = 18,
+                TotalEconomySeats = 110,
+                AvailableBusinessSeats = 18,
+                AvailableEconomySeats = 110,
+                BusinessClassPrice = 550.00m,
+                EconomyClassPrice = 220.00m,
+                IsActive = true
+            }
+        };
+
+        context.Flights.AddRange(flights);
+        context.SaveChanges();
+    }
+}
+
+// APPSETTINGS.JSON
+// ===============
+/*
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=(localdb)\\mssqllocaldb;Database=AirTicketDb;Trusted_Connection=True;MultipleActiveResultSets=true"
+  },
+  "JwtSettings": {
+    "Secret": "YourSuperSecretKeyHereMakeItLongAndComplex",
+    "Issuer": "AirTicket",
+    "Audience": "AirTicketClient",
+    "ExpirationInMinutes": 120
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*"
+}
