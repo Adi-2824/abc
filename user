@@ -1,0 +1,732 @@
+# User Dashboard API Integration Guide
+
+## Core User Dashboard APIs from Existing System
+
+### 1. Flight Search & Booking APIs
+
+#### GET /api/flights/search
+**Use Case:** Main flight search functionality on user dashboard
+**Frontend Integration:**
+```javascript
+// Flight search with real-time results
+const searchFlights = async (searchCriteria) => {
+  const params = new URLSearchParams({
+    origin: searchCriteria.origin,
+    destination: searchCriteria.destination,
+    departureDate: searchCriteria.departureDate,
+    passengers: searchCriteria.passengers,
+    preferredClass: searchCriteria.class || 'Economy'
+  });
+  
+  const response = await fetch(`/api/flights/search?${params}`);
+  return response.json();
+};
+
+// Usage in React component
+const FlightSearchWidget = () => {
+  const [searchResults, setSearchResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  
+  const handleSearch = async (criteria) => {
+    setLoading(true);
+    try {
+      const results = await searchFlights(criteria);
+      setSearchResults(results);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return (
+    <SearchForm onSearch={handleSearch} loading={loading} />
+  );
+};
+```
+
+**Dashboard Components:**
+- **Quick Search Widget:** Prominent search form on dashboard home
+- **Recent Searches:** Save and display user's recent search criteria
+- **Price Alerts:** Monitor price changes for saved searches
+- **Flexible Dates:** ±3 days search option
+
+#### GET /api/flights/{id}
+**Use Case:** Display detailed flight information before booking
+**Frontend Integration:**
+```javascript
+// Flight details modal/page
+const getFlightDetails = async (flightId) => {
+  const response = await fetch(`/api/flights/${flightId}`);
+  return response.json();
+};
+
+// Usage in flight selection
+const FlightDetailsModal = ({ flightId, onBook }) => {
+  const [flight, setFlight] = useState(null);
+  
+  useEffect(() => {
+    getFlightDetails(flightId).then(setFlight);
+  }, [flightId]);
+  
+  return (
+    <Modal>
+      <FlightInfo flight={flight} />
+      <BookingButton onClick={() => onBook(flight)} />
+    </Modal>
+  );
+};
+```
+
+**Dashboard Components:**
+- **Flight Details Popup:** Complete flight information
+- **Seat Availability Display:** Real-time seat counts
+- **Price Breakdown:** Fare details by class
+- **Aircraft Information:** Plane type, amenities
+
+### 2. Reservation Management APIs
+
+#### POST /api/reservations
+**Use Case:** Create new flight bookings
+**Frontend Integration:**
+```javascript
+// Booking flow implementation
+const createReservation = async (bookingData) => {
+  const response = await fetch('/api/reservations', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${userToken}`
+    },
+    body: JSON.stringify({
+      flightId: bookingData.flightId,
+      passengers: bookingData.passengers.map(p => ({
+        firstName: p.firstName,
+        lastName: p.lastName,
+        age: p.age,
+        gender: p.gender,
+        seatClass: p.seatClass
+      }))
+    })
+  });
+  return response.json();
+};
+
+// Multi-step booking wizard
+const BookingWizard = () => {
+  const [step, setStep] = useState(1);
+  const [bookingData, setBookingData] = useState({});
+  
+  const steps = [
+    <PassengerDetailsForm />,
+    <SeatSelectionForm />,
+    <BookingConfirmation />,
+    <PaymentForm />
+  ];
+  
+  return <WizardContainer>{steps[step - 1]}</WizardContainer>;
+};
+```
+
+**Dashboard Components:**
+- **Booking Wizard:** Multi-step reservation process
+- **Passenger Management:** Add/edit passenger details
+- **Seat Selection Interface:** Visual seat map (if available)
+- **Booking Summary:** Cost breakdown and terms
+
+#### GET /api/reservations
+**Use Case:** Display user's personal reservations on dashboard
+**Frontend Integration:**
+```javascript
+// User's reservation dashboard
+const loadUserReservations = async () => {
+  const response = await fetch('/api/reservations', {
+    headers: { 'Authorization': `Bearer ${userToken}` }
+  });
+  return response.json();
+};
+
+// Dashboard reservations widget
+const MyReservationsWidget = () => {
+  const [reservations, setReservations] = useState([]);
+  
+  useEffect(() => {
+    loadUserReservations().then(setReservations);
+  }, []);
+  
+  return (
+    <Widget title="My Bookings">
+      {reservations.map(reservation => (
+        <ReservationCard 
+          key={reservation.id} 
+          reservation={reservation}
+          onViewDetails={() => openDetails(reservation.id)}
+        />
+      ))}
+    </Widget>
+  );
+};
+```
+
+**Dashboard Components:**
+- **My Bookings Widget:** Quick overview of all reservations
+- **Booking Status Indicators:** Visual status (Pending/Confirmed/Cancelled)
+- **Quick Actions:** Cancel, modify, view details buttons
+- **Booking Timeline:** Progress tracking
+
+#### POST /api/reservations/{id}/cancel
+**Use Case:** Allow users to cancel their bookings
+**Frontend Integration:**
+```javascript
+// Cancellation flow
+const cancelReservation = async (reservationId) => {
+  const confirmed = await showConfirmationDialog({
+    title: 'Cancel Booking',
+    message: 'Are you sure you want to cancel this booking?',
+    type: 'warning'
+  });
+  
+  if (confirmed) {
+    const response = await fetch(`/api/reservations/${reservationId}/cancel`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${userToken}` }
+    });
+    
+    if (response.ok) {
+      showToast('Booking cancelled successfully', 'success');
+      refreshReservations();
+    }
+  }
+};
+```
+
+### 3. Reservation History APIs
+
+#### GET /api/reservationhistory/upcoming
+**Use Case:** Display upcoming trips prominently on dashboard
+**Frontend Integration:**
+```javascript
+// Upcoming trips widget
+const loadUpcomingTrips = async () => {
+  const response = await fetch('/api/reservationhistory/upcoming', {
+    headers: { 'Authorization': `Bearer ${userToken}` }
+  });
+  return response.json();
+};
+
+const UpcomingTripsWidget = () => {
+  const [upcomingTrips, setUpcomingTrips] = useState([]);
+  
+  useEffect(() => {
+    loadUpcomingTrips().then(setUpcomingTrips);
+  }, []);
+  
+  return (
+    <DashboardWidget title="Upcoming Trips" priority="high">
+      {upcomingTrips.length === 0 ? (
+        <EmptyState message="No upcoming trips" action="Book a flight" />
+      ) : (
+        <TripsList trips={upcomingTrips} />
+      )}
+    </DashboardWidget>
+  );
+};
+```
+
+**Dashboard Components:**
+- **Next Trip Card:** Highlighted upcoming journey with countdown
+- **Trip Timeline:** Visual timeline of upcoming flights
+- **Check-in Reminders:** Alerts for check-in availability
+- **Travel Documents:** Passport/visa requirement checks
+
+#### GET /api/reservationhistory/recent
+**Use Case:** Show recent booking activity
+**Frontend Integration:**
+```javascript
+// Recent activity feed
+const loadRecentBookings = async (limit = 5) => {
+  const response = await fetch(`/api/reservationhistory/recent?limit=${limit}`, {
+    headers: { 'Authorization': `Bearer ${userToken}` }
+  });
+  return response.json();
+};
+
+const RecentActivityWidget = () => {
+  const [recentBookings, setRecentBookings] = useState([]);
+  
+  return (
+    <Widget title="Recent Activity">
+      <ActivityFeed bookings={recentBookings} />
+      <ViewAllLink to="/history" />
+    </Widget>
+  );
+};
+```
+
+**Dashboard Components:**
+- **Activity Feed:** Chronological list of recent bookings
+- **Booking Status Updates:** Real-time status changes
+- **Quick Actions:** Fast access to recent bookings
+- **Activity Timeline:** Visual activity history
+
+#### GET /api/reservationhistory/summary
+**Use Case:** Personal travel analytics and insights
+**Frontend Integration:**
+```javascript
+// Personal travel analytics
+const loadTravelSummary = async () => {
+  const response = await fetch('/api/reservationhistory/summary', {
+    headers: { 'Authorization': `Bearer ${userToken}` }
+  });
+  return response.json();
+};
+
+const TravelInsightsWidget = () => {
+  const [summary, setSummary] = useState(null);
+  
+  useEffect(() => {
+    loadTravelSummary().then(setSummary);
+  }, []);
+  
+  if (!summary) return <WidgetSkeleton />;
+  
+  return (
+    <Widget title="Your Travel Insights">
+      <StatCard title="Trips This Year" value={summary.completedJourneys} />
+      <StatCard title="Total Spent" value={`$${summary.totalAmountSpent}`} />
+      <StatCard title="Favorite Destination" value={summary.mostFrequentDestination} />
+      <StatCard title="Miles Traveled" value={`${summary.totalMiles} miles`} />
+      
+      <MiniChart data={summary.monthlyStats} />
+    </Widget>
+  );
+};
+```
+
+**Dashboard Components:**
+- **Travel Statistics Cards:** Personal travel metrics
+- **Spending Analytics:** Monthly/yearly expense tracking
+- **Travel Patterns:** Favorite destinations and airlines
+- **Achievement Badges:** Travel milestones and rewards
+
+#### GET /api/reservationhistory/{id}/can-cancel
+#### GET /api/reservationhistory/{id}/can-modify
+**Use Case:** Dynamic action availability for booking management
+**Frontend Integration:**
+```javascript
+// Dynamic action buttons
+const useBookingActions = (reservationId) => {
+  const [actions, setActions] = useState({
+    canCancel: false,
+    canModify: false,
+    loading: true
+  });
+  
+  useEffect(() => {
+    Promise.all([
+      fetch(`/api/reservationhistory/${reservationId}/can-cancel`),
+      fetch(`/api/reservationhistory/${reservationId}/can-modify`)
+    ]).then(async ([cancelRes, modifyRes]) => {
+      setActions({
+        canCancel: await cancelRes.json(),
+        canModify: await modifyRes.json(),
+        loading: false
+      });
+    });
+  }, [reservationId]);
+  
+  return actions;
+};
+
+const BookingActionButtons = ({ reservationId }) => {
+  const { canCancel, canModify, loading } = useBookingActions(reservationId);
+  
+  return (
+    <ActionButtonGroup>
+      <Button 
+        disabled={!canCancel || loading}
+        onClick={() => handleCancel(reservationId)}
+      >
+        Cancel Booking
+      </Button>
+      <Button 
+        disabled={!canModify || loading}
+        onClick={() => handleModify(reservationId)}
+      >
+        Modify Booking
+      </Button>
+    </ActionButtonGroup>
+  );
+};
+```
+
+### 4. Payment Processing APIs
+
+#### POST /api/reservations/calculate-amount
+**Use Case:** Show pricing preview before payment
+**Frontend Integration:**
+```javascript
+// Price calculation for booking preview
+const calculateBookingAmount = async (reservationData) => {
+  const response = await fetch('/api/reservations/calculate-amount', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(reservationData)
+  });
+  return response.json();
+};
+
+const BookingSummary = ({ flightId, passengers }) => {
+  const [pricing, setPricing] = useState(null);
+  
+  useEffect(() => {
+    if (flightId && passengers.length > 0) {
+      calculateBookingAmount({ flightId, passengers })
+        .then(setPricing);
+    }
+  }, [flightId, passengers]);
+  
+  return (
+    <PricingBreakdown>
+      <PriceRow label="Base Fare" amount={pricing?.baseFare} />
+      <PriceRow label="Taxes & Fees" amount={pricing?.taxes} />
+      <PriceRow label="Total" amount={pricing?.totalAmount} emphasis />
+    </PricingBreakdown>
+  );
+};
+```
+
+#### POST /api/payments/process
+**Use Case:** Process payment for confirmed reservations
+**Frontend Integration:**
+```javascript
+// Payment processing flow
+const processPayment = async (paymentData) => {
+  const response = await fetch('/api/payments/process', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${userToken}`
+    },
+    body: JSON.stringify(paymentData)
+  });
+  return response.json();
+};
+
+const PaymentForm = ({ reservationId, amount, onSuccess }) => {
+  const [paymentMethod, setPaymentMethod] = useState('CreditCard');
+  const [cardDetails, setCardDetails] = useState({});
+  const [processing, setProcessing] = useState(false);
+  
+  const handlePayment = async () => {
+    setProcessing(true);
+    try {
+      const result = await processPayment({
+        reservationId,
+        paymentMethod,
+        ...cardDetails
+      });
+      
+      if (result.status === 'Completed') {
+        onSuccess(result);
+      }
+    } catch (error) {
+      showError('Payment failed. Please try again.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+  
+  return (
+    <PaymentWidget>
+      <PaymentMethodSelector value={paymentMethod} onChange={setPaymentMethod} />
+      <CreditCardForm value={cardDetails} onChange={setCardDetails} />
+      <PayButton onClick={handlePayment} loading={processing} />
+    </PaymentWidget>
+  );
+};
+```
+
+### 5. Authentication APIs
+
+#### POST /api/auth/login
+**Use Case:** User authentication for dashboard access
+**Frontend Integration:**
+```javascript
+// Authentication flow
+const loginUser = async (credentials) => {
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(credentials)
+  });
+  
+  if (response.ok) {
+    const { token, user } = await response.json();
+    localStorage.setItem('authToken', token);
+    return { token, user };
+  }
+  
+  throw new Error('Login failed');
+};
+
+const LoginForm = ({ onLogin }) => {
+  const [credentials, setCredentials] = useState({ email: '', password: '' });
+  
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const { token, user } = await loginUser(credentials);
+      onLogin({ token, user });
+    } catch (error) {
+      showError('Invalid email or password');
+    }
+  };
+  
+  return (
+    <AuthForm onSubmit={handleSubmit}>
+      <EmailInput value={credentials.email} onChange={setEmail} />
+      <PasswordInput value={credentials.password} onChange={setPassword} />
+      <LoginButton type="submit" />
+    </AuthForm>
+  );
+};
+```
+
+#### POST /api/auth/register
+**Use Case:** New user registration
+**Frontend Integration:**
+```javascript
+// User registration
+const registerUser = async (userData) => {
+  const response = await fetch('/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(userData)
+  });
+  return response.json();
+};
+
+const RegistrationForm = ({ onRegister }) => {
+  const [userData, setUserData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    phoneNumber: ''
+  });
+  
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    try {
+      const result = await registerUser(userData);
+      onRegister(result);
+    } catch (error) {
+      showError('Registration failed');
+    }
+  };
+  
+  return (
+    <RegistrationFormComponent onSubmit={handleRegister} />
+  );
+};
+```
+
+## Additional User Dashboard APIs (Recommended)
+
+### 6. User Profile Management
+
+#### GET /api/user/profile
+**Use Case:** Display and manage user profile information
+**Frontend Integration:**
+```javascript
+// Profile management
+const loadUserProfile = async () => {
+  const response = await fetch('/api/user/profile', {
+    headers: { 'Authorization': `Bearer ${userToken}` }
+  });
+  return response.json();
+};
+
+const ProfileWidget = () => {
+  const [profile, setProfile] = useState(null);
+  
+  return (
+    <Widget title="My Profile">
+      <ProfileInfo profile={profile} />
+      <EditProfileButton onClick={() => openProfileEditor()} />
+    </Widget>
+  );
+};
+```
+
+#### PUT /api/user/profile
+**Use Case:** Update user profile information
+**Frontend Integration:**
+```javascript
+// Profile updates
+const updateProfile = async (profileData) => {
+  const response = await fetch('/api/user/profile', {
+    method: 'PUT',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${userToken}` 
+    },
+    body: JSON.stringify(profileData)
+  });
+  return response.json();
+};
+```
+
+### 7. Notification Management
+
+#### GET /api/user/notifications
+**Use Case:** Display user notifications and alerts
+**Frontend Integration:**
+```javascript
+// Notification system
+const loadNotifications = async () => {
+  const response = await fetch('/api/user/notifications', {
+    headers: { 'Authorization': `Bearer ${userToken}` }
+  });
+  return response.json();
+};
+
+const NotificationCenter = () => {
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  
+  return (
+    <NotificationWidget>
+      <NotificationBell count={unreadCount} />
+      <NotificationDropdown notifications={notifications} />
+    </NotificationWidget>
+  );
+};
+```
+
+## Frontend Dashboard Architecture
+
+### Main Dashboard Layout
+```javascript
+// User dashboard main component
+const UserDashboard = () => {
+  const { user, isAuthenticated } = useAuth();
+  const [dashboardData, setDashboardData] = useState({
+    upcomingTrips: [],
+    recentBookings: [],
+    travelSummary: null
+  });
+  
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadDashboardData();
+    }
+  }, [isAuthenticated]);
+  
+  const loadDashboardData = async () => {
+    const [upcoming, recent, summary] = await Promise.all([
+      fetch('/api/reservationhistory/upcoming'),
+      fetch('/api/reservationhistory/recent?limit=5'),
+      fetch('/api/reservationhistory/summary')
+    ]);
+    
+    setDashboardData({
+      upcomingTrips: await upcoming.json(),
+      recentBookings: await recent.json(),
+      travelSummary: await summary.json()
+    });
+  };
+  
+  return (
+    <DashboardLayout>
+      <DashboardHeader user={user} />
+      
+      <MainContent>
+        <Row>
+          <Column span={8}>
+            <QuickSearchWidget />
+            <UpcomingTripsWidget trips={dashboardData.upcomingTrips} />
+            <RecentBookingsWidget bookings={dashboardData.recentBookings} />
+          </Column>
+          
+          <Column span={4}>
+            <TravelInsightsWidget summary={dashboardData.travelSummary} />
+            <ProfileWidget user={user} />
+            <NotificationCenter />
+          </Column>
+        </Row>
+      </MainContent>
+    </DashboardLayout>
+  );
+};
+```
+
+### Responsive Design Considerations
+```javascript
+// Mobile-optimized dashboard
+const MobileDashboard = () => {
+  return (
+    <MobileLayout>
+      <BottomNavigation>
+        <NavItem icon="search" label="Search" />
+        <NavItem icon="bookings" label="My Trips" />
+        <NavItem icon="history" label="History" />
+        <NavItem icon="profile" label="Profile" />
+      </BottomNavigation>
+      
+      <SwipeableViews>
+        <SearchView />
+        <TripsView />
+        <HistoryView />
+        <ProfileView />
+      </SwipeableViews>
+    </MobileLayout>
+  );
+};
+```
+
+### Real-time Updates
+```javascript
+// Real-time dashboard updates
+const useRealTimeDashboard = () => {
+  const [data, setData] = useState({});
+  
+  useEffect(() => {
+    // Poll for updates every 2 minutes
+    const interval = setInterval(async () => {
+      const updates = await fetch('/api/user/dashboard-updates');
+      const newData = await updates.json();
+      setData(prevData => ({ ...prevData, ...newData }));
+    }, 120000);
+    
+    return () => clearInterval(interval);
+  }, []);
+  
+  return data;
+};
+```
+
+## Key Integration Features
+
+### Progressive Web App (PWA) Support
+- Offline booking capability
+- Push notifications for flight updates
+- Home screen installation
+- Background sync for bookings
+
+### Performance Optimization
+- Lazy loading for dashboard widgets
+- Image optimization for flight images
+- Caching strategies for frequent data
+- Skeleton loading states
+
+### Accessibility Features
+- Screen reader compatibility
+- Keyboard navigation support
+- High contrast mode
+- Font size adjustment
+
+### Security Implementation
+- JWT token management with refresh
+- Secure storage of sensitive data
+- HTTPS enforcement
+- Input validation and sanitization
