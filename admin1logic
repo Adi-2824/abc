@@ -1,0 +1,272 @@
+// dashboard-overview.component.ts
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject, takeUntil, forkJoin } from 'rxjs';
+import { Chart, registerables } from 'chart.js';
+
+@Component({
+  selector: 'app-dashboard-overview',
+  template: `
+    <div class="dashboard-overview p-4">
+      <!-- KPI Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex items-center">
+            <div class="flex-1">
+              <h3 class="text-lg font-semibold text-gray-900">Total Reservations</h3>
+              <p class="text-3xl font-bold text-blue-600">{{dashboardMetrics.totalReservations | number}}</p>
+              <p class="text-sm" [ngClass]="dashboardMetrics.reservationsTrend >= 0 ? 'text-green-600' : 'text-red-600'">
+                <i class="pi" [ngClass]="dashboardMetrics.reservationsTrend >= 0 ? 'pi-arrow-up' : 'pi-arrow-down'"></i>
+                {{dashboardMetrics.reservationsTrend}}% from last month
+              </p>
+            </div>
+            <i class="pi pi-calendar text-4xl text-blue-500"></i>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex items-center">
+            <div class="flex-1">
+              <h3 class="text-lg font-semibold text-gray-900">Total Revenue</h3>
+              <p class="text-3xl font-bold text-green-600">{{dashboardMetrics.totalRevenue | currency}}</p>
+              <p class="text-sm" [ngClass]="dashboardMetrics.revenueTrend >= 0 ? 'text-green-600' : 'text-red-600'">
+                <i class="pi" [ngClass]="dashboardMetrics.revenueTrend >= 0 ? 'pi-arrow-up' : 'pi-arrow-down'"></i>
+                {{dashboardMetrics.revenueTrend}}% from last month
+              </p>
+            </div>
+            <i class="pi pi-dollar text-4xl text-green-500"></i>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex items-center">
+            <div class="flex-1">
+              <h3 class="text-lg font-semibold text-gray-900">Active Flights</h3>
+              <p class="text-3xl font-bold text-purple-600">{{dashboardMetrics.activeFlights | number}}</p>
+              <p class="text-sm text-gray-600">{{dashboardMetrics.totalFlights}} total flights</p>
+            </div>
+            <i class="pi pi-send text-4xl text-purple-500"></i>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex items-center">
+            <div class="flex-1">
+              <h3 class="text-lg font-semibold text-gray-900">Registered Users</h3>
+              <p class="text-3xl font-bold text-orange-600">{{dashboardMetrics.registeredUsers | number}}</p>
+              <p class="text-sm text-green-600">
+                <i class="pi pi-arrow-up"></i>
+                +{{dashboardMetrics.newUsersThisMonth}} this month
+              </p>
+            </div>
+            <i class="pi pi-users text-4xl text-orange-500"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- Revenue Chart -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-semibold">Revenue Trends</h3>
+            <p-dropdown 
+              [options]="periodOptions" 
+              [(ngModel)]="selectedPeriod"
+              (onChange)="updateRevenueChart()">
+            </p-dropdown>
+          </div>
+          <canvas #revenueChart height="300"></canvas>
+        </div>
+
+        <!-- Booking Status Distribution -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <h3 class="text-xl font-semibold mb-4">Booking Status Distribution</h3>
+          <canvas #statusChart height="300"></canvas>
+        </div>
+      </div>
+
+      <!-- Popular Routes Table -->
+      <div class="bg-white rounded-lg shadow">
+        <div class="p-6 border-b">
+          <h3 class="text-xl font-semibold">Popular Routes</h3>
+        </div>
+        <p-table [value]="popularRoutes" [paginator]="false">
+          <ng-template pTemplate="header">
+            <tr>
+              <th>Route</th>
+              <th>Bookings</th>
+              <th>Revenue</th>
+              <th>Avg Price</th>
+              <th>Growth</th>
+            </tr>
+          </ng-template>
+          <ng-template pTemplate="body" let-route>
+            <tr>
+              <td>
+                <div class="flex items-center space-x-2">
+                  <span class="font-medium">{{route.from}}</span>
+                  <i class="pi pi-arrow-right text-gray-400"></i>
+                  <span class="font-medium">{{route.to}}</span>
+                </div>
+              </td>
+              <td>{{route.bookings | number}}</td>
+              <td>{{route.revenue | currency}}</td>
+              <td>{{route.avgPrice | currency}}</td>
+              <td>
+                <span [ngClass]="route.growth >= 0 ? 'text-green-600' : 'text-red-600'">
+                  <i class="pi" [ngClass]="route.growth >= 0 ? 'pi-arrow-up' : 'pi-arrow-down'"></i>
+                  {{route.growth}}%
+                </span>
+              </td>
+            </tr>
+          </ng-template>
+        </p-table>
+      </div>
+    </div>
+  `
+})
+export class DashboardOverviewComponent implements OnInit, OnDestroy {
+  private destroy$ = new Subject<void>();
+  
+  dashboardMetrics: any = {};
+  popularRoutes: any[] = [];
+  revenueChart: Chart | null = null;
+  statusChart: Chart | null = null;
+  
+  selectedPeriod = '30d';
+  periodOptions = [
+    { label: 'Last 7 Days', value: '7d' },
+    { label: 'Last 30 Days', value: '30d' },
+    { label: 'Last 90 Days', value: '90d' },
+    { label: 'Last Year', value: '1y' }
+  ];
+
+  @ViewChild('revenueChart') revenueChartRef!: ElementRef;
+  @ViewChild('statusChart') statusChartRef!: ElementRef;
+
+  constructor(
+    private analyticsService: AnalyticsService,
+    private flightService: FlightService
+  ) {
+    Chart.register(...registerables);
+  }
+
+  ngOnInit() {
+    this.loadDashboardData();
+    
+    // Refresh data every 5 minutes
+    setInterval(() => {
+      this.loadDashboardData();
+    }, 300000);
+  }
+
+  ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
+    
+    if (this.revenueChart) this.revenueChart.destroy();
+    if (this.statusChart) this.statusChart.destroy();
+  }
+
+  ngAfterViewInit() {
+    setTimeout(() => {
+      this.initializeCharts();
+    }, 100);
+  }
+
+  loadDashboardData() {
+    forkJoin({
+      metrics: this.analyticsService.getDashboardMetrics(this.selectedPeriod),
+      routes: this.analyticsService.getPopularRoutes(),
+      revenueData: this.analyticsService.getRevenueData(this.selectedPeriod),
+      statusData: this.analyticsService.getBookingStatusDistribution()
+    }).pipe(
+      takeUntil(this.destroy$)
+    ).subscribe({
+      next: ({ metrics, routes, revenueData, statusData }) => {
+        this.dashboardMetrics = metrics;
+        this.popularRoutes = routes;
+        this.updateCharts(revenueData, statusData);
+      },
+      error: (error) => {
+        console.error('Error loading dashboard data:', error);
+        // Handle error with toast notification
+      }
+    });
+  }
+
+  initializeCharts() {
+    this.createRevenueChart();
+    this.createStatusChart();
+  }
+
+  createRevenueChart() {
+    const ctx = this.revenueChartRef.nativeElement.getContext('2d');
+    
+    this.revenueChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Revenue',
+          data: [],
+          borderColor: '#3B82F6',
+          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: function(value) {
+                return '$' + value.toLocaleString();
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  createStatusChart() {
+    const ctx = this.statusChartRef.nativeElement.getContext('2d');
+    
+    this.statusChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Confirmed', 'Pending', 'Cancelled'],
+        datasets: [{
+          data: [],
+          backgroundColor: [
+            '#10B981', // Green for confirmed
+            '#F59E0B', // Yellow for pending  
+            '#EF4444'  // Red for cancelled
+          ],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom'
+          }
+        }
+      }
+    });
+  }
+
+  updateCharts(revenueData: any, statusData: any) {
+    if (this.revenueChart)
