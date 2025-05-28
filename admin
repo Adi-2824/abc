@@ -1,0 +1,457 @@
+# Admin Dashboard API Integration Guide
+
+## Core Admin APIs from Main System
+
+### 1. Flight Management APIs
+
+#### GET /api/flights
+**Use Case:** Display all flights in admin flight management grid
+**Frontend Integration:**
+```javascript
+// Flight listing page with search/filter
+const loadFlights = async (filters = {}) => {
+  const params = new URLSearchParams(filters);
+  const response = await fetch(`/api/flights?${params}`);
+  return response.json();
+};
+
+// Usage in React component
+const [flights, setFlights] = useState([]);
+useEffect(() => {
+  loadFlights({ page: 1, pageSize: 50 }).then(setFlights);
+}, []);
+```
+
+**Dashboard Component:** Flight Management Table
+- Real-time flight status overview
+- Bulk operations (enable/disable flights)
+- Quick search and filtering
+- Sortable columns (departure, arrival, price, availability)
+
+#### POST /api/flights
+**Use Case:** Create new flights through admin interface
+**Frontend Integration:**
+```javascript
+// Flight creation form
+const createFlight = async (flightData) => {
+  const response = await fetch('/api/flights', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(flightData)
+  });
+  return response.json();
+};
+```
+
+**Dashboard Component:** Flight Creation Modal/Form
+- Multi-step flight creation wizard
+- Route selection with airport autocomplete
+- Pricing configuration for different classes
+- Seat capacity management
+- Schedule conflict validation
+
+#### PUT /api/flights/{id}
+**Use Case:** Update existing flight details
+**Frontend Integration:**
+```javascript
+// Inline editing or edit modal
+const updateFlight = async (flightId, updates) => {
+  const response = await fetch(`/api/flights/${flightId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates)
+  });
+  return response.json();
+};
+```
+
+**Dashboard Component:** Flight Edit Form
+- Inline editing in data grid
+- Price adjustment tools
+- Seat availability modifications
+- Schedule change management
+
+#### DELETE /api/flights/{id}
+**Use Case:** Remove flights from system
+**Frontend Integration:**
+```javascript
+// Flight deletion with confirmation
+const deleteFlight = async (flightId) => {
+  if (confirm('Delete this flight? This action cannot be undone.')) {
+    await fetch(`/api/flights/${flightId}`, { method: 'DELETE' });
+    // Refresh flight list
+  }
+};
+```
+
+**Dashboard Component:** Flight Management Actions
+- Bulk delete functionality
+- Confirmation dialogs with impact analysis
+- Cascade delete warnings (existing reservations)
+
+### 2. Reservation Management APIs
+
+#### GET /api/reservations (Admin Enhanced)
+**Use Case:** View all system reservations with admin privileges
+**Frontend Integration:**
+```javascript
+// Admin reservation dashboard
+const loadAllReservations = async (filters = {}) => {
+  const params = new URLSearchParams({
+    ...filters,
+    adminView: true, // Admin flag for system-wide access
+    includeUserDetails: true
+  });
+  const response = await fetch(`/api/reservations?${params}`);
+  return response.json();
+};
+```
+
+**Dashboard Components:**
+- **Reservation Overview Grid:** All system reservations
+- **Status Distribution Chart:** Pending/Confirmed/Cancelled breakdown
+- **Revenue Analytics:** Real-time booking revenue
+- **Customer Search:** Find reservations by customer details
+
+#### GET /api/reservations/{id} (Admin View)
+**Use Case:** View detailed reservation information for customer service
+**Frontend Integration:**
+```javascript
+// Detailed reservation view for admin
+const getReservationDetails = async (reservationId) => {
+  const response = await fetch(`/api/reservations/${reservationId}`, {
+    headers: { 'X-Admin-View': 'true' }
+  });
+  return response.json();
+};
+```
+
+**Dashboard Component:** Reservation Detail Modal
+- Complete passenger information
+- Payment history and status
+- Modification history log
+- Customer contact information
+- Administrative actions (refund, modify, cancel)
+
+## Additional Required Admin APIs
+
+### 3. User Management APIs
+
+#### GET /api/admin/users
+**Use Case:** Manage system users and customer accounts
+**Endpoint Design:**
+```javascript
+// User management dashboard
+const loadUsers = async (filters = {}) => {
+  const response = await fetch('/api/admin/users?' + new URLSearchParams({
+    page: filters.page || 1,
+    pageSize: filters.pageSize || 25,
+    role: filters.role, // 'Admin', 'User', 'All'
+    status: filters.status, // 'Active', 'Suspended', 'All'
+    searchTerm: filters.search
+  }));
+  return response.json();
+};
+```
+
+**Dashboard Components:**
+- **User Management Grid:** Paginated user list
+- **Role Assignment:** Change user roles (User ↔ Admin)
+- **Account Status Control:** Suspend/activate accounts
+- **User Activity Log:** Login history and actions
+
+#### PUT /api/admin/users/{id}/role
+**Use Case:** Change user roles and permissions
+**Frontend Integration:**
+```javascript
+// Role management
+const updateUserRole = async (userId, newRole) => {
+  await fetch(`/api/admin/users/${userId}/role`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role: newRole })
+  });
+};
+```
+
+#### PUT /api/admin/users/{id}/status
+**Use Case:** Suspend or activate user accounts
+**Frontend Integration:**
+```javascript
+// Account status management
+const updateUserStatus = async (userId, status) => {
+  await fetch(`/api/admin/users/${userId}/status`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }) // 'Active', 'Suspended'
+  });
+};
+```
+
+### 4. System Analytics APIs
+
+#### GET /api/admin/analytics/dashboard
+**Use Case:** Main dashboard KPI metrics
+**Frontend Integration:**
+```javascript
+// Dashboard overview cards
+const loadDashboardMetrics = async (timeRange = '30d') => {
+  const response = await fetch(`/api/admin/analytics/dashboard?period=${timeRange}`);
+  return response.json();
+  
+  // Expected response:
+  // {
+  //   totalReservations: 1250,
+  //   totalRevenue: 125000,
+  //   activeFlights: 45,
+  //   registeredUsers: 2340,
+  //   trendsData: { ... }
+  // }
+};
+```
+
+**Dashboard Component:** KPI Cards Grid
+- Total bookings (with trend indicators)
+- Revenue metrics (daily/monthly/yearly)
+- Active flights count
+- User registration statistics
+- Growth percentage calculations
+
+#### GET /api/admin/analytics/revenue
+**Use Case:** Revenue analysis and financial reporting
+**Frontend Integration:**
+```javascript
+// Revenue analytics
+const loadRevenueAnalytics = async (filters = {}) => {
+  const params = new URLSearchParams({
+    startDate: filters.startDate,
+    endDate: filters.endDate,
+    groupBy: filters.groupBy || 'daily', // daily, weekly, monthly
+    breakdown: filters.breakdown // airline, route, class
+  });
+  
+  const response = await fetch(`/api/admin/analytics/revenue?${params}`);
+  return response.json();
+};
+```
+
+**Dashboard Components:**
+- **Revenue Charts:** Line/bar charts with time series data
+- **Revenue Breakdown:** By airline, route, seat class
+- **Comparative Analysis:** Period-over-period comparisons
+- **Forecasting:** Revenue projections based on trends
+
+#### GET /api/admin/analytics/bookings
+**Use Case:** Booking pattern analysis
+**Frontend Integration:**
+```javascript
+// Booking analytics
+const loadBookingAnalytics = async (dateRange) => {
+  const response = await fetch(`/api/admin/analytics/bookings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      startDate: dateRange.start,
+      endDate: dateRange.end,
+      metrics: ['volume', 'conversion', 'cancellation', 'popular_routes']
+    })
+  });
+  return response.json();
+};
+```
+
+**Dashboard Components:**
+- **Booking Volume Charts:** Daily/weekly booking trends
+- **Conversion Funnel:** Search → Book → Pay → Confirm rates
+- **Popular Routes:** Most booked flight routes
+- **Peak Time Analysis:** Booking patterns by time of day/week
+
+### 5. Payment Management APIs
+
+#### GET /api/admin/payments
+**Use Case:** Monitor payment transactions and processing
+**Frontend Integration:**
+```javascript
+// Payment monitoring dashboard
+const loadPaymentTransactions = async (filters = {}) => {
+  const response = await fetch('/api/admin/payments?' + new URLSearchParams({
+    status: filters.status, // 'Completed', 'Failed', 'Pending', 'Refunded'
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+    amountMin: filters.amountMin,
+    amountMax: filters.amountMax,
+    page: filters.page || 1
+  }));
+  return response.json();
+};
+```
+
+**Dashboard Components:**
+- **Payment Transaction Grid:** All payment records
+- **Payment Status Distribution:** Success/failure rates
+- **Refund Management:** Process and track refunds
+- **Payment Method Analytics:** Credit card vs other methods
+
+#### POST /api/admin/payments/{id}/refund
+**Use Case:** Process administrative refunds
+**Frontend Integration:**
+```javascript
+// Admin refund processing
+const processRefund = async (paymentId, refundData) => {
+  const response = await fetch(`/api/admin/payments/${paymentId}/refund`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      amount: refundData.amount,
+      reason: refundData.reason,
+      adminNotes: refundData.notes
+    })
+  });
+  return response.json();
+};
+```
+
+### 6. System Configuration APIs
+
+#### GET /api/admin/config/airlines
+**Use Case:** Manage airline configurations and partnerships
+**Frontend Integration:**
+```javascript
+// Airline management
+const loadAirlines = async () => {
+  const response = await fetch('/api/admin/config/airlines');
+  return response.json();
+};
+
+const updateAirlineConfig = async (airlineId, config) => {
+  await fetch(`/api/admin/config/airlines/${airlineId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config)
+  });
+};
+```
+
+**Dashboard Component:** Airline Configuration Panel
+- Enable/disable airlines
+- Commission rate settings
+- Service fee configurations
+- Partnership status management
+
+#### GET /api/admin/config/system
+**Use Case:** System-wide configuration management
+**Frontend Integration:**
+```javascript
+// System configuration
+const loadSystemConfig = async () => {
+  const response = await fetch('/api/admin/config/system');
+  return response.json();
+  
+  // Expected settings:
+  // - Booking time limits
+  // - Cancellation policies
+  // - Service fees
+  // - Email templates
+  // - Notification settings
+};
+```
+
+## Frontend Dashboard Architecture
+
+### Main Dashboard Layout
+```javascript
+// Admin dashboard main component structure
+const AdminDashboard = () => {
+  return (
+    <DashboardLayout>
+      <Sidebar>
+        <NavItem to="/admin/overview">Dashboard</NavItem>
+        <NavItem to="/admin/flights">Flight Management</NavItem>
+        <NavItem to="/admin/reservations">Reservations</NavItem>
+        <NavItem to="/admin/users">User Management</NavItem>
+        <NavItem to="/admin/payments">Payments</NavItem>
+        <NavItem to="/admin/analytics">Analytics</NavItem>
+        <NavItem to="/admin/settings">System Config</NavItem>
+      </Sidebar>
+      
+      <MainContent>
+        <Routes>
+          <Route path="/overview" element={<DashboardOverview />} />
+          <Route path="/flights" element={<FlightManagement />} />
+          <Route path="/reservations" element={<ReservationManagement />} />
+          <Route path="/users" element={<UserManagement />} />
+          <Route path="/payments" element={<PaymentManagement />} />
+          <Route path="/analytics" element={<AnalyticsDashboard />} />
+          <Route path="/settings" element={<SystemConfiguration />} />
+        </Routes>
+      </MainContent>
+    </DashboardLayout>
+  );
+};
+```
+
+### Real-time Data Integration
+```javascript
+// WebSocket or polling for real-time updates
+const useRealTimeMetrics = () => {
+  const [metrics, setMetrics] = useState({});
+  
+  useEffect(() => {
+    // Poll every 30 seconds for real-time dashboard updates
+    const interval = setInterval(async () => {
+      const data = await loadDashboardMetrics();
+      setMetrics(data);
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
+  
+  return metrics;
+};
+```
+
+### Data Export Functionality
+```javascript
+// Export capabilities for reports
+const exportData = async (type, filters) => {
+  const response = await fetch(`/api/admin/export/${type}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(filters)
+  });
+  
+  // Handle file download
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${type}-report-${new Date().toISOString().split('T')[0]}.xlsx`;
+  a.click();
+};
+```
+
+## Key Integration Considerations
+
+### Authentication & Authorization
+- All admin APIs require `Admin` role in JWT token
+- Implement route guards in frontend router
+- Session management with automatic token refresh
+- Audit logging for all administrative actions
+
+### Error Handling & User Experience
+- Comprehensive error boundaries for admin components
+- Loading states for data-heavy operations
+- Confirmation dialogs for destructive actions
+- Toast notifications for operation success/failure
+
+### Performance Optimization
+- Implement pagination for large datasets
+- Use data virtualization for extensive grids
+- Cache dashboard metrics with appropriate TTL
+- Lazy loading for dashboard modules
+
+### Security Best Practices
+- Input validation on all form submissions
+- CSRF protection for state-changing operations
+- Rate limiting on sensitive admin endpoints
+- Comprehensive activity logging and monitoring
