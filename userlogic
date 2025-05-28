@@ -1,0 +1,342 @@
+# Angular Frontend - User Journey & API Integration Overview
+
+## User Authentication Flow
+
+### 1. *Login/Registration Page*
+*User Experience:*
+- Login form with email/password
+- Registration form with personal details
+- "Remember Me" functionality
+- Password visibility toggle
+- Form validation with real-time feedback
+
+*APIs Used:*
+- POST /api/auth/login - User authentication
+- POST /api/auth/register - New user registration
+
+*Frontend Implementation:*
+- JWT token storage in localStorage/sessionStorage
+- Route guards for protected pages
+- Auto-redirect after successful login
+
+---
+
+## Main Dashboard (Post-Login)
+
+### 2. *Dashboard Home Page*
+*User Experience:*
+- Welcome message with user's name
+- Quick stats cards (Total Bookings, Upcoming Trips, Amount Spent)
+- Upcoming journeys carousel/list
+- Recent bookings summary
+- Quick action buttons (Book New Flight, View All Bookings)
+
+*APIs Used:*
+- GET /api/reservationhistory/summary - Dashboard statistics
+- GET /api/reservationhistory/upcoming - Upcoming trips
+- GET /api/reservationhistory/recent?limit=5 - Recent bookings
+
+*Angular Components:*
+typescript
+// Components needed
+- DashboardComponent
+- StatsCardComponent
+- UpcomingTripsComponent
+- RecentBookingsComponent
+- QuickActionsComponent
+
+
+---
+
+## Flight Booking Journey
+
+### 3. *Flight Search Page*
+*User Experience:*
+- Search form (Origin, Destination, Departure Date, Passengers, Class)
+- Location autocomplete/dropdown
+- Date picker with calendar widget
+- Passenger count selector
+- Class preference (Economy/Business)
+- Search results with filters and sorting
+
+*APIs Used:*
+- GET /api/flights/search?origin=NYC&destination=LAX&departureDate=2024-06-01&passengers=2&preferredClass=Economy
+- GET /api/flights - All available flights (for autocomplete/filters)
+
+*Angular Features:*
+- Reactive forms with validation
+- Debounced search for autocomplete
+- Loading states and error handling
+- Responsive grid for search results
+
+### 4. *Flight Selection & Booking Page*
+*User Experience:*
+- Selected flight details display
+- Passenger information forms (multiple passengers)
+- Seat class selection per passenger
+- Total amount calculation preview
+- Terms and conditions checkbox
+
+*APIs Used:*
+- GET /api/flights/{id} - Detailed flight information
+- POST /api/reservations/calculate-amount - Price calculation preview
+- POST /api/reservations - Create booking reservation
+
+*Angular Features:*
+- Dynamic form arrays for multiple passengers
+- Real-time price calculation
+- Form validation with custom validators
+- Stepper/wizard interface
+
+### 5. *Payment Processing Page*
+*User Experience:*
+- Payment method selection (Credit Card, Debit Card, PayPal)
+- Credit card form with validation
+- Booking summary sidebar
+- Secure payment processing indicator
+- Success/failure feedback
+
+*APIs Used:*
+- POST /api/payments/process - Process payment
+- GET /api/payments/reservation/{reservationId} - Payment status
+
+*Angular Features:*
+- Credit card input formatting
+- Payment form validation
+- Loading spinners during processing
+- Success/error modals
+
+---
+
+## Reservation Management
+
+### 6. *My Bookings/Reservation History Page*
+*User Experience:*
+- Tabbed interface (All, Upcoming, Past, Cancelled)
+- Advanced filters sidebar (Date range, Airline, Route, Status)
+- Search functionality
+- Sortable columns (Date, Amount, Destination)
+- Pagination controls
+- Booking cards with key information
+
+*APIs Used:*
+- GET /api/reservationhistory?page=1&pageSize=10&sortBy=BookingDate&sortDescending=true
+- GET /api/reservationhistory?journeyType=Upcoming&status=Confirmed
+- GET /api/reservationhistory?fromDate=2024-01-01&toDate=2024-12-31
+
+*Angular Features:*
+typescript
+// Filter interface
+interface BookingFilters {
+  journeyType?: 'Past' | 'Upcoming' | 'Current';
+  status?: 'Pending' | 'Confirmed' | 'Cancelled';
+  fromDate?: string;
+  toDate?: string;
+  airline?: string;
+  origin?: string;
+  destination?: string;
+  page: number;
+  pageSize: number;
+  sortBy: string;
+  sortDescending: boolean;
+}
+
+
+### 7. *Booking Details Page*
+*User Experience:*
+- Complete booking information display
+- Flight details with timeline
+- Passenger information cards
+- Payment details section
+- Action buttons (Cancel, Modify, Download Ticket)
+- QR code for mobile tickets
+
+*APIs Used:*
+- GET /api/reservationhistory/{id} - Detailed booking information
+- GET /api/reservationhistory/{id}/can-cancel - Check cancellation eligibility
+- GET /api/reservationhistory/{id}/can-modify - Check modification eligibility
+- POST /api/reservations/{id}/cancel - Cancel booking
+
+*Angular Features:*
+- Dynamic action buttons based on booking status
+- Confirmation dialogs for destructive actions
+- Print/download functionality
+- QR code generation
+
+---
+
+## User Profile & Analytics
+
+### 8. *Travel Analytics/Statistics Page*
+*User Experience:*
+- Travel statistics dashboard
+- Monthly spending charts
+- Destination frequency charts
+- Preferred airlines pie chart
+- Travel timeline/calendar view
+- Export functionality
+
+*APIs Used:*
+- GET /api/reservationhistory/summary - Complete travel analytics
+
+*Angular Features:*
+- Chart.js or ng2-charts integration
+- Interactive data visualizations
+- Export to PDF/Excel functionality
+- Responsive dashboard layout
+
+### 9. *User Profile Page*
+*User Experience:*
+- Personal information display/edit
+- Password change functionality  
+- Notification preferences
+- Travel preferences
+- Account settings
+
+*APIs Used:*
+- User profile APIs (would need to be added to backend)
+- Password change endpoints
+
+---
+
+## Angular Architecture Overview
+
+### *Core Services*
+typescript
+// Service structure
+AuthService {
+  login(email: string, password: string)
+  register(userData: RegisterRequest)
+  logout()
+  isAuthenticated()
+  getToken()
+}
+
+FlightService {
+  searchFlights(searchCriteria: FlightSearchRequest)
+  getFlightById(id: number)
+  getAllFlights()
+}
+
+ReservationService {
+  createReservation(reservationData: CreateReservationRequest)
+  getReservations(filters: BookingFilters)
+  getReservationById(id: number)
+  cancelReservation(id: number)
+  calculateAmount(data: AmountCalculationRequest)
+}
+
+PaymentService {
+  processPayment(paymentData: PaymentRequest)
+  getPaymentByReservation(reservationId: number)
+}
+
+ReservationHistoryService {
+  getReservationHistory(filters: ReservationHistoryFilterDTO)
+  getUpcomingJourneys()
+  getPastJourneys(limit?: number)
+  getReservationSummary()
+  getRecentBookings(limit?: number)
+}
+
+
+### *Route Structure*
+typescript
+const routes: Routes = [
+  { path: '', redirectTo: '/login', pathMatch: 'full' },
+  { path: 'login', component: LoginComponent },
+  { path: 'register', component: RegisterComponent },
+  { 
+    path: 'dashboard', 
+    component: DashboardComponent,
+    canActivate: [AuthGuard]
+  },
+  {
+    path: 'flights',
+    children: [
+      { path: 'search', component: FlightSearchComponent },
+      { path: 'book/:id', component: BookingComponent },
+      { path: 'payment/:reservationId', component: PaymentComponent }
+    ],
+    canActivate: [AuthGuard]
+  },
+  {
+    path: 'bookings',
+    children: [
+      { path: '', component: BookingListComponent },
+      { path: ':id', component: BookingDetailsComponent }
+    ],
+    canActivate: [AuthGuard]
+  },
+  { path: 'analytics', component: AnalyticsComponent, canActivate: [AuthGuard] },
+  { path: 'profile', component: ProfileComponent, canActivate: [AuthGuard] }
+];
+
+
+### *State Management Options*
+typescript
+// Option 1: NgRx for complex state management
+interface AppState {
+  auth: AuthState;
+  flights: FlightState;
+  reservations: ReservationState;
+  ui: UIState;
+}
+
+// Option 2: Simple service-based state management
+// Using BehaviorSubjects in services for state management
+
+
+---
+
+## UI/UX Features
+
+### *Responsive Design*
+- Mobile-first approach
+- Tablet and desktop optimizations
+- Touch-friendly interfaces
+- Offline capability indicators
+
+### *User Experience Enhancements*
+- Loading states and skeleton screens
+- Real-time form validation
+- Toast notifications for actions
+- Confirmation dialogs for destructive actions
+- Auto-save functionality
+- Search history and suggestions
+
+### *Accessibility Features*
+- ARIA labels and roles
+- Keyboard navigation support
+- Screen reader compatibility
+- High contrast mode support
+
+### *Performance Optimizations*
+- Lazy loading of modules
+- Virtual scrolling for large lists
+- Image optimization and lazy loading
+- Caching strategies for API responses
+- Progressive Web App features
+
+---
+
+## Key Angular Libraries/Dependencies
+
+json
+{
+  "dependencies": {
+    "@angular/core": "^16.x",
+    "@angular/router": "^16.x",
+    "@angular/forms": "^16.x",
+    "@angular/common": "^16.x",
+    "@angular/material": "^16.x", // or Bootstrap/PrimeNG
+    "chart.js": "^4.x", // for analytics charts
+    "ng2-charts": "^5.x",
+    "ngx-qrcode2": "^12.x", // for QR codes
+    "moment": "^2.x", // for date handling
+    "rxjs": "^7.x"
+  }
+}
+
+
+This frontend architecture provides a complete, user-friendly airline reservation system with modern Angular practices, comprehensive API integration, and excellent user experience design.
