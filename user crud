@@ -589,3 +589,139 @@ namespace AirTicketReservation.Controllers
     }
 }
 ----------------------------------------
+
+------------------------------------------------------------------------- user side edit profile 
+
+// DTOs/UserManagementDTOs.cs - Add this new DTO to your existing file
+public class UpdateUserProfileDTO
+{
+    [Required]
+    [EmailAddress]
+    public string Email { get; set; }
+    
+    [Required]
+    public string FirstName { get; set; }
+    
+    [Required]
+    public string LastName { get; set; }
+    
+    public string PhoneNumber { get; set; }
+}
+
+// Services/IUserManagementService.cs - Add this method to your existing interface
+Task<UserDetailsDTO> UpdateUserProfileAsync(int userId, UpdateUserProfileDTO updateUserProfileDto);
+
+// Services/UserManagementService.cs - Add this method to your existing service class
+public async Task<UserDetailsDTO> UpdateUserProfileAsync(int userId, UpdateUserProfileDTO updateUserProfileDto)
+{
+    var user = await _context.Users.FindAsync(userId);
+    if (user == null)
+        return null;
+    
+    // Check if email is being changed and if new email already exists
+    if (user.Email != updateUserProfileDto.Email && 
+        await _context.Users.AnyAsync(u => u.Email == updateUserProfileDto.Email && u.Id != userId))
+    {
+        throw new InvalidOperationException("Email already exists");
+    }
+    
+    // Update only the allowed fields (excluding Role)
+    user.Email = updateUserProfileDto.Email;
+    user.FirstName = updateUserProfileDto.FirstName;
+    user.LastName = updateUserProfileDto.LastName;
+    user.PhoneNumber = updateUserProfileDto.PhoneNumber;
+    
+    await _context.SaveChangesAsync();
+    
+    return await GetUserByIdAsync(userId);
+}
+
+// Controllers/UserProfileController.cs - New controller for user-side operations
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using AirTicketReservation.DTOs;
+using AirTicketReservation.Services;
+using System.Security.Claims;
+
+namespace AirTicketReservation.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    [Authorize] // All authenticated users can access
+    public class UserProfileController : ControllerBase
+    {
+        private readonly IUserManagementService _userManagementService;
+        
+        public UserProfileController(IUserManagementService userManagementService)
+        {
+            _userManagementService = userManagementService;
+        }
+        
+        /// <summary>
+        /// Get current user's profile details
+        /// </summary>
+        [HttpGet]
+        public async Task<ActionResult<UserDetailsDTO>> GetMyProfile()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+            {
+                return BadRequest(new { message = "Invalid user token" });
+            }
+            
+            var user = await _userManagementService.GetUserByIdAsync(userId);
+            if (user == null)
+                return NotFound(new { message = "User not found" });
+            
+            return Ok(user);
+        }
+        
+        /// <summary>
+        /// Update current user's profile details (excluding role)
+        /// </summary>
+        [HttpPut]
+        public async Task<ActionResult<UserDetailsDTO>> UpdateMyProfile([FromBody] UpdateUserProfileDTO updateUserProfileDto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+            {
+                return BadRequest(new { message = "Invalid user token" });
+            }
+            
+            try
+            {
+                var user = await _userManagementService.UpdateUserProfileAsync(userId, updateUserProfileDto);
+                if (user == null)
+                    return NotFound(new { message = "User not found" });
+                
+                return Ok(user);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+        
+        /// <summary>
+        /// Change current user's password
+        /// </summary>
+        [HttpPost("change-password")]
+        public async Task<ActionResult> ChangeMyPassword([FromBody] ChangePasswordDTO changePasswordDto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+            {
+                return BadRequest(new { message = "Invalid user token" });
+            }
+            
+            var result = await _userManagementService.ChangeUserPasswordAsync(userId, changePasswordDto);
+            if (!result)
+                return NotFound(new { message = "User not found" });
+            
+            return Ok(new { message = "Password changed successfully" });
+        }
+    }
+}
+
+// Don't forget to register the service in Program.cs if not already done
+// builder.Services.AddScoped<IUserManagementService, UserManagementService>();
